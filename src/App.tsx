@@ -1088,9 +1088,11 @@ export default function App() {
         } else {
           setMessages(data.map((m: any) => ({ ...m, id: m.id.toString() })));
         }
+      } else {
+        console.error(`Failed to fetch chat history: ${res.status} ${res.statusText}`);
       }
     } catch (e) {
-      console.error("Failed to fetch chat history", e);
+      console.error("Failed to fetch chat history (network error):", e);
     }
   };
 
@@ -1129,9 +1131,11 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setSkills(data);
+      } else {
+        console.error(`Failed to fetch skills: ${res.status} ${res.statusText}`);
       }
     } catch (e) {
-      console.error("Failed to fetch skills", e);
+      console.error("Failed to fetch skills (network error):", e);
     }
   };
 

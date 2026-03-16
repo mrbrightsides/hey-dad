@@ -170,6 +170,11 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Health check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
   // API Routes
   app.get("/api/skills", (req, res) => {
     const skills = db.prepare("SELECT * FROM skills").all();
@@ -456,6 +461,12 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Global error handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Unhandled error:", err);
+    res.status(500).json({ error: "Internal Server Error", message: err.message });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -486,4 +497,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
