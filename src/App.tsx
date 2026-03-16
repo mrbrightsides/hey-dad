@@ -700,7 +700,8 @@ export default function App() {
       const res = await fetch('/api/profile');
       const data = await res.json();
       setProfile(data);
-      if (data.has_onboarded === 0) {
+      const hasSeenOnboardingLocal = localStorage.getItem('has_seen_onboarding');
+      if (data.has_onboarded === 0 && !hasSeenOnboardingLocal) {
         setShowOnboarding(true);
       }
     } catch (e) {
@@ -729,6 +730,7 @@ export default function App() {
   };
 
   const completeOnboarding = async () => {
+    localStorage.setItem('has_seen_onboarding', 'true');
     try {
       await fetch('/api/profile', {
         method: 'POST',
@@ -928,6 +930,7 @@ export default function App() {
   const resetAllData = async () => {
     if (!window.confirm(t.resetConfirm)) return;
     try {
+      localStorage.removeItem('has_seen_onboarding');
       await fetch('/api/reset', { method: 'POST' });
       alert(t.resetSuccess);
       window.location.reload();
@@ -1803,7 +1806,7 @@ export default function App() {
                                 <button 
                                   onClick={() => handleSpeak(msg.content)}
                                   className="p-1.5 rounded-lg text-[#d5d5c5] dark:text-zinc-600 hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-all"
-                                  title="Speak"
+                                  title="Hear"
                                 >
                                   <Mic size={14} />
                                 </button>
@@ -3081,6 +3084,13 @@ export default function App() {
               className="bg-white dark:bg-zinc-900 rounded-[2rem] shadow-2xl w-full max-w-xl overflow-hidden transition-colors border border-white/20"
             >
               <div className="relative h-48 bg-gradient-to-br from-[#5A5A40] to-[#7a7a5a] dark:from-emerald-700 dark:to-emerald-900 flex items-center justify-center overflow-hidden">
+                <button 
+                  onClick={completeOnboarding}
+                  className="absolute top-4 right-4 z-20 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                  title="Close"
+                >
+                  <X size={20} />
+                </button>
                 <div className="absolute inset-0 opacity-20">
                   <div className="absolute top-0 left-0 w-32 h-32 bg-white rounded-full -translate-x-16 -translate-y-16 blur-3xl" />
                   <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-400 rounded-full translate-x-16 translate-y-16 blur-3xl" />
