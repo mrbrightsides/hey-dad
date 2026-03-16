@@ -3,6 +3,10 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const DATA_DIR = path.join(process.cwd(), "data");
 if (!fs.existsSync(DATA_DIR)) {
@@ -87,17 +91,50 @@ db.exec(`
     FOREIGN KEY(skill_id) REFERENCES skills(id)
   );
 
+  CREATE TABLE IF NOT EXISTS user_profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1), -- Only one profile
+    interests TEXT,
+    goals TEXT,
+    challenges TEXT,
+    personality TEXT DEFAULT 'wise elder',
+    has_onboarded INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS emotional_checkins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT,
+    feeling TEXT,
+    notes TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS engagement_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature TEXT, -- 'affirmation', 'memory_save', 'checkin'
+    timestamp TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS api_usage (
     date TEXT PRIMARY KEY,
     count INTEGER DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS community_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    content TEXT,
+    author TEXT,
+    type TEXT, -- 'advice' or 'milestone'
+    date TEXT,
+    likes INTEGER DEFAULT 0
+  );
 `);
 
-// Migration: Ensure order_index exists in goals and goal_steps, and type in calendar_events
+// Migration: Ensure order_index exists in goals and goal_steps, type in calendar_events, and has_onboarded in user_profile
 const migrations = [
   { table: 'goals', column: 'order_index', type: 'INTEGER DEFAULT 0' },
   { table: 'goal_steps', column: 'order_index', type: 'INTEGER DEFAULT 0' },
-  { table: 'calendar_events', column: 'type', type: "TEXT DEFAULT 'event'" }
+  { table: 'calendar_events', column: 'type', type: "TEXT DEFAULT 'event'" },
+  { table: 'user_profile', column: 'has_onboarded', type: 'INTEGER DEFAULT 0' }
 ];
 
 for (const m of migrations) {
@@ -254,14 +291,20 @@ async function startServer() {
 
   // Chat History API
   app.get("/api/chat", (req, res) => {
-    const history = db.prepare("SELECT role, content FROM chat_history ORDER BY id ASC LIMIT 50").all();
+    const history = db.prepare("SELECT id, role, content FROM chat_history ORDER BY id ASC LIMIT 50").all();
     res.json(history);
   });
 
   app.post("/api/chat", (req, res) => {
     const { role, content } = req.body;
     const timestamp = new Date().toISOString();
-    db.prepare("INSERT INTO chat_history (role, content, timestamp) VALUES (?, ?, ?)").run(role, content, timestamp);
+    const info = db.prepare("INSERT INTO chat_history (role, content, timestamp) VALUES (?, ?, ?)").run(role, content, timestamp);
+    res.json({ success: true, id: info.lastInsertRowid });
+  });
+
+  app.delete("/api/chat/:id", (req, res) => {
+    const { id } = req.params;
+    db.prepare("DELETE FROM chat_history WHERE id = ?").run(id);
     res.json({ success: true });
   });
 
@@ -332,6 +375,25 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Community API
+  app.get("/api/community", (req, res) => {
+    const posts = db.prepare("SELECT * FROM community_posts ORDER BY date DESC").all();
+    res.json(posts);
+  });
+
+  app.post("/api/community", (req, res) => {
+    const { title, content, author, type } = req.body;
+    const date = new Date().toISOString();
+    db.prepare("INSERT INTO community_posts (title, content, author, type, date) VALUES (?, ?, ?, ?, ?)").run(title, content, author || 'Anonymous', type, date);
+    res.json({ success: true });
+  });
+
+  app.post("/api/community/:id/like", (req, res) => {
+    const { id } = req.params;
+    db.prepare("UPDATE community_posts SET likes = likes + 1 WHERE id = ?").run(id);
+    res.json({ success: true });
+  });
+
   // Reset Data API
   app.post("/api/reset", (req, res) => {
     db.prepare("DELETE FROM chat_history").run();
@@ -341,8 +403,56 @@ async function startServer() {
     db.prepare("DELETE FROM emergency_contacts").run();
     db.prepare("DELETE FROM calendar_events").run();
     db.prepare("DELETE FROM memories").run();
+    db.prepare("DELETE FROM user_profile").run();
+    db.prepare("DELETE FROM emotional_checkins").run();
+    db.prepare("DELETE FROM engagement_stats").run();
+    db.prepare("DELETE FROM community_posts").run();
     // Reset skills completion
     db.prepare("UPDATE skills SET completed = 0").run();
+    res.json({ success: true });
+  });
+
+  // User Profile API
+  app.get("/api/profile", (req, res) => {
+    let profile = db.prepare("SELECT * FROM user_profile WHERE id = 1").get();
+    if (!profile) {
+      db.prepare("INSERT INTO user_profile (id, interests, goals, challenges, personality, has_onboarded) VALUES (1, '', '', '', 'wise elder', 0)").run();
+      profile = db.prepare("SELECT * FROM user_profile WHERE id = 1").get();
+    }
+    res.json(profile);
+  });
+
+  app.post("/api/profile", (req, res) => {
+    const { interests, goals, challenges, personality, has_onboarded } = req.body;
+    db.prepare("UPDATE user_profile SET interests = ?, goals = ?, challenges = ?, personality = ?, has_onboarded = ? WHERE id = 1").run(interests, goals, challenges, personality, has_onboarded !== undefined ? (has_onboarded ? 1 : 0) : 1);
+    res.json({ success: true });
+  });
+
+  // Emotional Checkins API
+  app.get("/api/checkins", (req, res) => {
+    const checkins = db.prepare("SELECT * FROM emotional_checkins ORDER BY date DESC").all();
+    res.json(checkins);
+  });
+
+  app.post("/api/checkins", (req, res) => {
+    const { feeling, notes } = req.body;
+    const date = new Date().toISOString();
+    db.prepare("INSERT INTO emotional_checkins (date, feeling, notes) VALUES (?, ?, ?)").run(date, feeling, notes);
+    res.json({ success: true });
+  });
+
+  // Engagement Stats API
+  app.get("/api/stats", (req, res) => {
+    const stats = db.prepare("SELECT feature, COUNT(*) as count FROM engagement_stats GROUP BY feature").all();
+    const skillsCount = db.prepare("SELECT COUNT(*) as count FROM skills WHERE completed = 1").get();
+    const totalSkills = db.prepare("SELECT COUNT(*) as count FROM skills").get();
+    res.json({ engagement: stats, skills: { completed: skillsCount.count, total: totalSkills.count } });
+  });
+
+  app.post("/api/stats", (req, res) => {
+    const { feature } = req.body;
+    const timestamp = new Date().toISOString();
+    db.prepare("INSERT INTO engagement_stats (feature, timestamp) VALUES (?, ?)").run(feature, timestamp);
     res.json({ success: true });
   });
 
@@ -354,14 +464,25 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(process.cwd(), "dist")));
+    const distPath = path.resolve(__dirname, "dist");
+    app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(process.cwd(), "dist/index.html"));
+      res.sendFile(path.resolve(distPath, "index.html"));
     });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
+    if (process.env.NODE_ENV === "production") {
+      const distPath = path.resolve(__dirname, "dist");
+      console.log(`Serving static files from: ${distPath}`);
+      if (fs.existsSync(distPath)) {
+        console.log(`Dist folder exists. Contents: ${fs.readdirSync(distPath).join(", ")}`);
+      } else {
+        console.error(`Dist folder NOT FOUND at ${distPath}. Did you run 'npm run build'?`);
+      }
+    }
   });
 }
 
