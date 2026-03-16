@@ -1,0 +1,8 @@
+{
+  "name": "Hey Dad",
+  "description": "An AI-powered father figure providing guidance, practical life skills, and emotional support for those growing up without a father figure.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
