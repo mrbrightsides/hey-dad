@@ -610,6 +610,7 @@ export default function App() {
     document.body.classList.toggle('dark', isDark);
     root.style.colorScheme = isDark ? 'dark' : 'light';
     localStorage.setItem('theme', theme);
+    document.getElementById('theme-meta')?.setAttribute('content', isDark ? '#000000' : '#ffffff');
   }, [theme]);
 
   const t = TRANSLATIONS[language];
@@ -621,6 +622,13 @@ export default function App() {
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
+    // Hide splash screen
+    const splash = document.getElementById('splash-screen');
+    if (splash) {
+      splash.style.opacity = '0';
+      setTimeout(() => splash.remove(), 500);
+    }
+
     fetchSkills();
     fetchJournal();
     fetchGoals();
