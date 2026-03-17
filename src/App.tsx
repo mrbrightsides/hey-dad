@@ -51,10 +51,14 @@ import {
   Sun,
   Share2,
   RefreshCw,
-  Users
+  Users,
+  Download,
+  Bell,
+  BellOff
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
+import { jsPDF } from 'jspdf';
 import { 
   BarChart, 
   Bar, 
@@ -215,7 +219,11 @@ interface UserProfile {
   goals: string;
   challenges: string;
   personality: string;
+  favorite_jokes?: string;
   has_onboarded?: number;
+  notifications_enabled?: number;
+  notify_calendar?: number;
+  notify_journal?: number;
 }
 
 interface EmotionalCheckin {
@@ -369,6 +377,24 @@ const TRANSLATIONS = {
     finish: "Finish",
     privacyPolicyTitle: "Privacy Policy",
     privacyPolicy: "Dad values your privacy. Your data stays on your device and is only used to help Dad understand you better. We don't sell your info to anyone. You can reset all your data at any time in the Profile settings.",
+    exportChat: "Export Chat History",
+    exportSuccess: "Chat history exported successfully!",
+    exportMemories: "Export Memories",
+    exportTXT: "Export as TXT",
+    exportPDF: "Export as PDF",
+    favoriteJokes: "Favorite Dad Jokes",
+    favoriteJokesDesc: "Tell Dad your favorite jokes so he can share them back!",
+    jokesPlaceholder: "Enter your favorite jokes here...",
+    notifications: "Notifications",
+    enableNotifications: "Enable Local Notifications",
+    notifyEvents: "Remind me about calendar events",
+    notifyJournal: "Encourage me to write in journal",
+    settings: "Settings",
+    notificationPermissionDenied: "Notification permission denied. Please enable it in your browser settings.",
+    notificationEventTitle: "Upcoming Event",
+    notificationEventBody: "Hey kiddo, you have an event: {title} coming up soon!",
+    notificationJournalTitle: "Time for a Journal Entry?",
+    notificationJournalBody: "It's been a while since your last entry. Want to share something with Dad?",
   },
   id: {
     appName: "Halo Ayah",
@@ -507,6 +533,24 @@ const TRANSLATIONS = {
     finish: "Selesai",
     privacyPolicyTitle: "Kebijakan Privasi",
     privacyPolicy: "Ayah menghargai privasimu. Datamu tetap ada di perangkatmu dan hanya digunakan untuk membantu Ayah memahamimu lebih baik. Kami tidak menjual informasimu kepada siapa pun. Kamu dapat menghapus semua datamu kapan saja di pengaturan Profil.",
+    exportChat: "Ekspor Riwayat Obrolan",
+    exportSuccess: "Riwayat obrolan berhasil diekspor!",
+    exportMemories: "Ekspor Kenangan",
+    exportTXT: "Ekspor sebagai TXT",
+    exportPDF: "Ekspor sebagai PDF",
+    favoriteJokes: "Lelucon Ayah Favorit",
+    favoriteJokesDesc: "Beritahu Ayah lelucon favoritmu agar dia bisa membagikannya kembali!",
+    jokesPlaceholder: "Masukkan lelucon favoritmu di sini...",
+    notifications: "Notifikasi",
+    enableNotifications: "Aktifkan Notifikasi Lokal",
+    notifyEvents: "Ingatkan saya tentang acara kalender",
+    notifyJournal: "Dorong saya untuk menulis di jurnal",
+    settings: "Pengaturan",
+    notificationPermissionDenied: "Izin notifikasi ditolak. Harap aktifkan di pengaturan browser Anda.",
+    notificationEventTitle: "Acara Mendatang",
+    notificationEventBody: "Halo nak, kamu punya acara: {title} yang akan segera datang!",
+    notificationJournalTitle: "Waktunya Menulis Jurnal?",
+    notificationJournalBody: "Sudah lama sejak entri terakhirmu. Ingin berbagi sesuatu dengan Ayah?",
   }
 };
 
@@ -526,7 +570,6 @@ interface Memory {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'toolbox' | 'journal' | 'calendar' | 'memoryBox' | 'profile'>('chat');
-  const [profileSubTab, setProfileSubTab] = useState<'about' | 'goals' | 'safety' | 'progress'>('about');
   const [language, setLanguage] = useState<'en' | 'id'>('en');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -567,6 +610,10 @@ export default function App() {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [isPrompting, setIsPrompting] = useState(false);
+  const [profileSubTab, setProfileSubTab] = useState<'about' | 'goals' | 'safety' | 'progress' | 'settings'>('about');
+  
+  const lastNotifiedEventId = useRef<number | null>(null);
+  const lastJournalReminderDate = useRef<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
@@ -583,6 +630,141 @@ export default function App() {
     localStorage.setItem('theme', theme);
     document.getElementById('theme-meta')?.setAttribute('content', isDark ? '#000000' : '#ffffff');
   }, [theme]);
+
+  useEffect(() => {
+    if (profile.notifications_enabled) {
+      const interval = setInterval(() => {
+        checkNotifications();
+      }, 60000); // Check every minute
+      return () => clearInterval(interval);
+    }
+  }, [profile.notifications_enabled, calendarEvents, journal]);
+
+  const checkNotifications = () => {
+    if (!profile.notifications_enabled) return;
+
+    // Check Calendar Events
+    if (profile.notify_calendar) {
+      const now = new Date();
+      const upcoming = calendarEvents.find(event => {
+        const eventDate = new Date(event.date);
+        const diff = eventDate.getTime() - now.getTime();
+        // Notify if event is in the next 30 minutes and not notified yet
+        return diff > 0 && diff < 30 * 60 * 1000 && lastNotifiedEventId.current !== event.id;
+      });
+
+      if (upcoming) {
+        showNotification(
+          t.notificationEventTitle,
+          t.notificationEventBody.replace('{title}', upcoming.title)
+        );
+        lastNotifiedEventId.current = upcoming.id;
+      }
+    }
+
+    // Check Journal
+    if (profile.notify_journal) {
+      const today = new Date().toISOString().split('T')[0];
+      if (lastJournalReminderDate.current !== today) {
+        const lastEntry = journal[0];
+        const now = new Date();
+        const lastDate = lastEntry ? new Date(lastEntry.date) : new Date(0);
+        const diff = now.getTime() - lastDate.getTime();
+
+        // If no entry today and it's evening (after 6 PM)
+        if (diff > 24 * 60 * 60 * 1000 && now.getHours() >= 18) {
+          showNotification(
+            t.notificationJournalTitle,
+            t.notificationJournalBody
+          );
+          lastJournalReminderDate.current = today;
+        }
+      }
+    }
+  };
+
+  const showNotification = (title: string, body: string) => {
+    if (!("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      new Notification(title, { body, icon: '/favicon.ico' });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          new Notification(title, { body, icon: '/favicon.ico' });
+        }
+      });
+    }
+  };
+
+  const handleExportChat = () => {
+    const history = storage.getChatHistory();
+    if (history.length === 0) return;
+
+    const content = history.map(m => {
+      const role = m.role === 'user' ? 'Me' : 'Dad';
+      return `[${role}]: ${m.content}\n`;
+    }).join('\n---\n\n');
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-with-dad-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    playSound('success');
+  };
+
+  const handleExportMemories = (format: 'txt' | 'pdf') => {
+    if (memories.length === 0) return;
+
+    const title = t.memoryBoxTitle;
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    if (format === 'txt') {
+      const memoryText = memories.map(m => `[${new Date(m.date).toLocaleDateString()}] ${m.content}`).join('\n\n---\n\n');
+      const blob = new Blob([memoryText], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dad-memories-${dateStr}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      const doc = new jsPDF();
+      doc.setFontSize(20);
+      doc.text(title, 20, 20);
+      doc.setFontSize(12);
+      
+      let y = 40;
+      memories.forEach((m, i) => {
+        const date = new Date(m.date).toLocaleDateString();
+        const content = m.content;
+        
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        
+        doc.setFont("helvetica", "bold");
+        doc.text(`${i + 1}. ${date}`, 20, y);
+        y += 7;
+        
+        doc.setFont("helvetica", "normal");
+        const splitText = doc.splitTextToSize(content, 170);
+        doc.text(splitText, 20, y);
+        y += (splitText.length * 7) + 10;
+      });
+      
+      doc.save(`dad-memories-${dateStr}.pdf`);
+    }
+  };
 
   const t = TRANSLATIONS[language];
   const isDarkMode = theme === 'dark';
@@ -1362,6 +1544,14 @@ export default function App() {
               <Languages size={14} />
               {language === 'en' ? 'Bahasa Indonesia' : 'English'}
             </button>
+            <button 
+              onClick={handleExportChat}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#f5f5f0] dark:bg-zinc-800 rounded-full text-xs font-sans font-bold text-[#5A5A40] dark:text-emerald-400 hover:bg-[#e5e5d5] dark:hover:bg-zinc-700 transition-colors"
+              title={t.exportChat}
+            >
+              <Download size={14} />
+              {t.exportChat}
+            </button>
             <nav className="flex gap-1 bg-[#f0f0e5] dark:bg-zinc-800 p-1 rounded-full font-sans text-xs font-medium transition-colors">
               <button 
                 onClick={() => setActiveTab('chat')}
@@ -1445,6 +1635,13 @@ export default function App() {
               className="p-2 text-[#5A5A40] dark:text-emerald-400 hover:bg-[#f5f5f0] dark:hover:bg-zinc-800 rounded-full transition-all"
             >
               <Sparkles size={20} />
+            </button>
+            <button 
+              onClick={handleExportChat}
+              className="p-2 text-[#5A5A40] dark:text-emerald-400 hover:bg-[#f5f5f0] dark:hover:bg-zinc-800 rounded-full transition-all"
+              title={t.exportChat}
+            >
+              <Download size={20} />
             </button>
           </div>
         </div>
@@ -1939,9 +2136,27 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="space-y-6 md:space-y-8"
             >
-              <div className="mb-4 md:mb-8">
-                <h2 className="text-2xl md:text-3xl font-bold mb-1 md:mb-2 text-[#5A5A40] dark:text-emerald-400">{t.memoryBoxTitle}</h2>
-                <p className="text-sm md:text-base text-[#8a8a7a] dark:text-zinc-400">{t.memoryBoxDesc}</p>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 md:mb-8 gap-4">
+                <div>
+                  <h2 className="text-2xl md:text-3xl font-bold mb-1 md:mb-2 text-[#5A5A40] dark:text-emerald-400">{t.memoryBoxTitle}</h2>
+                  <p className="text-sm md:text-base text-[#8a8a7a] dark:text-zinc-400">{t.memoryBoxDesc}</p>
+                </div>
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button 
+                    onClick={() => handleExportMemories('txt')}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 text-[#5A5A40] dark:text-zinc-300 rounded-xl border border-[#e5e5d5] dark:border-zinc-700 text-sm font-bold hover:bg-[#f5f5f0] dark:hover:bg-zinc-700 transition-all"
+                  >
+                    <Download size={16} />
+                    {t.exportTXT}
+                  </button>
+                  <button 
+                    onClick={() => handleExportMemories('pdf')}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 text-[#5A5A40] dark:text-zinc-300 rounded-xl border border-[#e5e5d5] dark:border-zinc-700 text-sm font-bold hover:bg-[#f5f5f0] dark:hover:bg-zinc-700 transition-all"
+                  >
+                    <Download size={16} />
+                    {t.exportPDF}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
@@ -2140,6 +2355,12 @@ export default function App() {
                   >
                     {t.safetyNet}
                   </button>
+                  <button 
+                    onClick={() => setProfileSubTab('settings')}
+                    className={cn("px-4 py-2 rounded-lg transition-all", profileSubTab === 'settings' ? "bg-white dark:bg-zinc-700 text-[#5A5A40] dark:text-emerald-400 shadow-sm" : "text-[#8a8a7a] dark:text-zinc-500 hover:text-[#5A5A40] dark:hover:text-emerald-300")}
+                  >
+                    {t.settings}
+                  </button>
                 </div>
               </div>
 
@@ -2184,7 +2405,7 @@ export default function App() {
 
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-widest text-[#8a8a7a] dark:text-zinc-500 mb-2">{t.personality}</label>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
                         {[
                           { id: 'mentor', label: t.mentor, icon: <BrainCircuit size={18} />, desc: t.archetypeMentor },
                           { id: 'playful', label: t.playful, icon: <Smile size={18} />, desc: t.archetypePlayful },
@@ -2208,6 +2429,17 @@ export default function App() {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-[#8a8a7a] dark:text-zinc-500 mb-2">{t.favoriteJokes}</label>
+                      <p className="text-xs text-[#8a8a7a] dark:text-zinc-500 mb-3">{t.favoriteJokesDesc}</p>
+                      <textarea 
+                        value={profile.favorite_jokes || ''}
+                        onChange={(e) => setProfile({...profile, favorite_jokes: e.target.value})}
+                        placeholder={t.jokesPlaceholder}
+                        className="w-full bg-[#f5f5f0] dark:bg-zinc-800 border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-emerald-500 rounded-2xl px-4 py-3 font-sans text-sm min-h-[100px] text-[#3a3a2e] dark:text-zinc-100 placeholder-[#8a8a7a] dark:placeholder-zinc-600"
+                      />
                     </div>
 
                     <button 
@@ -2559,6 +2791,106 @@ export default function App() {
                         </div>
                       </div>
                     </div>
+                  </motion.div>
+                )}
+
+                {profileSubTab === 'settings' && (
+                  <motion.div 
+                    key="settings"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-3xl shadow-sm border border-[#e5e5d5] dark:border-zinc-800 space-y-8 transition-colors"
+                  >
+                    <div className="space-y-6">
+                      <h3 className="text-xl font-bold text-[#5A5A40] dark:text-emerald-400 flex items-center gap-2">
+                        <Bell size={24} />
+                        {t.notifications}
+                      </h3>
+                      
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between p-4 bg-[#f5f5f0] dark:bg-zinc-800 rounded-2xl">
+                          <div className="flex items-center gap-3">
+                            <div className={cn("p-2 rounded-lg", profile.notifications_enabled ? "bg-emerald-100 text-emerald-600" : "bg-zinc-200 text-zinc-500")}>
+                              {profile.notifications_enabled ? <Bell size={20} /> : <BellOff size={20} />}
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm">{t.enableNotifications}</div>
+                              <div className="text-[10px] text-[#8a8a7a] dark:text-zinc-500">Get reminders from Dad</div>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              const newVal = profile.notifications_enabled ? 0 : 1;
+                              if (newVal === 1) {
+                                Notification.requestPermission().then(permission => {
+                                  if (permission === 'granted') {
+                                    setProfile({...profile, notifications_enabled: 1});
+                                  } else {
+                                    alert(t.notificationPermissionDenied);
+                                  }
+                                });
+                              } else {
+                                setProfile({...profile, notifications_enabled: 0});
+                              }
+                            }}
+                            className={cn("w-12 h-6 rounded-full transition-colors relative", profile.notifications_enabled ? "bg-emerald-500" : "bg-zinc-300")}
+                          >
+                            <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all", profile.notifications_enabled ? "left-7" : "left-1")} />
+                          </button>
+                        </div>
+
+                        {profile.notifications_enabled === 1 && (
+                          <div className="space-y-3 pl-4 border-l-2 border-emerald-100 dark:border-emerald-900/30">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-[#5a5a4a] dark:text-zinc-300">{t.notifyEvents}</span>
+                              <button 
+                                onClick={() => setProfile({...profile, notify_calendar: profile.notify_calendar ? 0 : 1})}
+                                className={cn("w-10 h-5 rounded-full transition-colors relative", profile.notify_calendar ? "bg-emerald-500" : "bg-zinc-300")}
+                              >
+                                <div className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all", profile.notify_calendar ? "left-5.5" : "left-0.5")} />
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-[#5a5a4a] dark:text-zinc-300">{t.notifyJournal}</span>
+                              <button 
+                                onClick={() => setProfile({...profile, notify_journal: profile.notify_journal ? 0 : 1})}
+                                className={cn("w-10 h-5 rounded-full transition-colors relative", profile.notify_journal ? "bg-emerald-500" : "bg-zinc-300")}
+                              >
+                                <div className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all", profile.notify_journal ? "left-5.5" : "left-0.5")} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-[#e5e5d5] dark:border-zinc-800">
+                      <h3 className="text-xl font-bold text-[#5A5A40] dark:text-emerald-400 mb-4 flex items-center gap-2">
+                        <Download size={24} />
+                        Data
+                      </h3>
+                      <button 
+                        onClick={handleExportChat}
+                        className="flex items-center gap-3 p-4 bg-[#f5f5f0] dark:bg-zinc-800 rounded-2xl hover:bg-[#e5e5d5] dark:hover:bg-zinc-700 transition-all w-full"
+                      >
+                        <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                          <Download size={20} />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-bold text-sm">{t.exportChat}</div>
+                          <div className="text-[10px] text-[#8a8a7a] dark:text-zinc-500">Download your conversations as a text file</div>
+                        </div>
+                      </button>
+                    </div>
+
+                    <button 
+                      onClick={updateProfile}
+                      className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-[#4a4a35] dark:hover:bg-emerald-500 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Save size={20} />
+                      {t.saveProfile}
+                    </button>
                   </motion.div>
                 )}
               </AnimatePresence>

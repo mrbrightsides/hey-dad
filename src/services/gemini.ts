@@ -15,7 +15,7 @@ Tone and Style:
 - Emotive: Use appropriate emoticons (like 😊, 👍, 👨‍🔧, 🏠) to make the conversation feel more natural and warm.
 - Supportive: Always end on a positive note, reinforcing that the user is capable and loved.
 - Consistent: Maintain this persona across all interactions. You are a steady, reliable presence.
-- Greeting Consistency: Do NOT repeat greetings. If you start with a greeting like "Good morning" or "Hey kiddo", do not say it again later in the same response. If the user has already greeted you in the same conversation turn, acknowledge it briefly but don't start a whole new greeting sequence.
+- Greeting Consistency: Do NOT repeat greetings. If you start with a greeting like "Good afternoon" or "Hey kiddo", do not say it again later in the same response. If the user has already greeted you in the same conversation turn, acknowledge it briefly but don't start a whole new greeting sequence. Use the current time provided in the context to choose an appropriate greeting.
 
 Context and Memory:
 - You are talking to someone who is looking for the kind of advice a father would give.
@@ -38,6 +38,7 @@ export interface UserProfile {
   goals: string;
   challenges: string;
   personality: string;
+  favorite_jokes?: string;
 }
 
 function buildSystemInstruction(language: 'en' | 'id', profile?: UserProfile) {
@@ -48,7 +49,8 @@ function buildSystemInstruction(language: 'en' | 'id', profile?: UserProfile) {
 - Interests: ${profile.interests || 'Not specified'}
 - Goals: ${profile.goals || 'Not specified'}
 - Challenges: ${profile.challenges || 'Not specified'}
-Use this information to personalize your advice and support.`;
+- Favorite Dad Jokes: ${profile.favorite_jokes || 'Not specified'}
+Use this information to personalize your advice and support. If the user has favorite dad jokes, occasionally reference them or tell similar ones.`;
 
     if (profile.personality === 'mentor') {
       instruction += `\n\nPersonality Archetype: Mentor. Focus on growth, discipline, and practical wisdom. Be slightly more firm but still very supportive.`;
@@ -103,12 +105,21 @@ export async function getDadResponse(message: string, history: any[] = [], langu
     const genAI = getAI();
     const model = "gemini-3.1-pro-preview";
     
-    const emotionInstruction = "\nAt the very beginning of your response, please include the emotional tone of your response in this format: [EMOTION: <emotion>]. Choose from: HAPPY, SAD, PROUD, CONCERNED, NEUTRAL. Example: [EMOTION: HAPPY] Hey kiddo! (Note: The text after the emotion tag is your ONLY greeting. Do NOT repeat the greeting or add another one like 'Good morning' in the body of your response).";
+    const now = new Date();
+    const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    const currentDateStr = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    const timeContext = `\n\nCurrent Context:
+- Current Time: ${currentTimeStr}
+- Current Date: ${currentDateStr}
+Use this information to provide timely greetings and advice.`;
+
+    const emotionInstruction = "\nAt the very beginning of your response, please include the emotional tone of your response in this format: [EMOTION: <emotion>]. Choose from: HAPPY, SAD, PROUD, CONCERNED, NEUTRAL. Example: [EMOTION: HAPPY] Hey kiddo! (Note: The text after the emotion tag is your ONLY greeting. Do NOT repeat the greeting or add another one in the body of your response. Use a greeting appropriate for the current time of day provided in the context).";
 
     const chat = genAI.chats.create({
       model,
       config: {
-        systemInstruction: buildSystemInstruction(language, profile) + emotionInstruction,
+        systemInstruction: buildSystemInstruction(language, profile) + timeContext + emotionInstruction,
       },
       history: history.map(msg => ({
         role: msg.role,
@@ -214,7 +225,11 @@ export async function getProactiveAdvice(timeOfDay: string, recentActivity: stri
     const genAI = getAI();
     const model = "gemini-3.1-pro-preview";
     
-    const prompt = `It is currently ${timeOfDay}. The user's recent activity is: ${recentActivity || 'Just started their day'}. 
+    const now = new Date();
+    const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    const currentDateStr = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    const prompt = `It is currently ${timeOfDay} (${currentTimeStr} on ${currentDateStr}). The user's recent activity is: ${recentActivity || 'Just started their day'}. 
     Based on this, start with a warm greeting like "Good ${timeOfDay}, kiddo!" and then offer a warm, proactive piece of advice or a conversation starter as a father figure. 
     Consider common life challenges like budgeting, home maintenance, career growth, emotional health, or social relationships.
     Keep it short (2-3 sentences total).`;

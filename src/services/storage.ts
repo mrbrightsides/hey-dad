@@ -65,6 +65,10 @@ interface UserProfile {
   challenges: string;
   personality: string;
   has_onboarded?: number;
+  notifications_enabled?: number;
+  notify_calendar?: number;
+  notify_journal?: number;
+  favorite_jokes?: string;
 }
 
 interface EmotionalCheckin {
@@ -228,7 +232,17 @@ export const storage = {
   },
 
   // Profile
-  getProfile: () => get<UserProfile>(STORAGE_KEYS.PROFILE, { interests: '', goals: '', challenges: '', personality: 'wise elder', has_onboarded: 0 }),
+  getProfile: () => get<UserProfile>(STORAGE_KEYS.PROFILE, { 
+    interests: '', 
+    goals: '', 
+    challenges: '', 
+    personality: 'wise elder', 
+    has_onboarded: 0,
+    notifications_enabled: 0,
+    notify_calendar: 1,
+    notify_journal: 1,
+    favorite_jokes: ''
+  }),
   updateProfile: (profile: UserProfile) => set(STORAGE_KEYS.PROFILE, profile),
 
   // Checkins
