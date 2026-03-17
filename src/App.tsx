@@ -215,6 +215,7 @@ interface Goal {
 }
 
 interface UserProfile {
+  preferredName?: string;
   interests: string;
   goals: string;
   challenges: string;
@@ -336,7 +337,8 @@ const TRANSLATIONS = {
     checkin: "Check-in",
     interests: "Interests",
     challenges: "Challenges",
-    personality: "Personality",
+    dadPersonality: "Dad's Personality",
+    preferredNameLabel: "What do you want to be called?",
     mentor: "Mentor",
     playful: "Playful",
     wiseElder: "Wise Elder",
@@ -492,7 +494,8 @@ const TRANSLATIONS = {
     checkin: "Cek-in",
     interests: "Minat",
     challenges: "Tantangan",
-    personality: "Kepribadian",
+    dadPersonality: "Kepribadian Ayah",
+    preferredNameLabel: "Kamu ingin dipanggil apa?",
     mentor: "Mentor",
     playful: "Ceria",
     wiseElder: "Tetua Bijak",
@@ -2374,6 +2377,17 @@ export default function App() {
                     className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-3xl shadow-sm border border-[#e5e5d5] dark:border-zinc-800 space-y-6 transition-colors"
                   >
                     <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-[#8a8a7a] dark:text-zinc-500 mb-2">{t.preferredNameLabel}</label>
+                      <input 
+                        type="text"
+                        value={profile.preferredName || ''}
+                        onChange={(e) => setProfile({...profile, preferredName: e.target.value})}
+                        placeholder="e.g., Kiddo, Champ, [Your Name]..."
+                        className="w-full bg-[#f5f5f0] dark:bg-zinc-800 border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-emerald-500 rounded-2xl px-4 py-3 font-sans text-sm text-[#3a3a2e] dark:text-zinc-100 placeholder-[#8a8a7a] dark:placeholder-zinc-600"
+                      />
+                    </div>
+
+                    <div>
                       <label className="block text-xs font-bold uppercase tracking-widest text-[#8a8a7a] dark:text-zinc-500 mb-2">{t.interests}</label>
                       <textarea 
                         value={profile.interests}
@@ -2404,7 +2418,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-widest text-[#8a8a7a] dark:text-zinc-500 mb-2">{t.personality}</label>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-[#8a8a7a] dark:text-zinc-500 mb-2">{t.dadPersonality}</label>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
                         {[
                           { id: 'mentor', label: t.mentor, icon: <BrainCircuit size={18} />, desc: t.archetypeMentor },
@@ -3192,6 +3206,16 @@ export default function App() {
                       </p>
                       
                       <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] uppercase tracking-widest font-bold text-[#8a8a7a] dark:text-zinc-500 mb-1 block">{t.preferredNameLabel}</label>
+                          <input 
+                            type="text"
+                            value={profile.preferredName || ''}
+                            onChange={(e) => setProfile({...profile, preferredName: e.target.value})}
+                            placeholder="e.g., Kiddo, Champ, [Your Name]..."
+                            className="w-full bg-gray-50 dark:bg-zinc-800 border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-emerald-500 rounded-xl px-4 py-3 font-sans text-sm text-[#3a3a2e] dark:text-zinc-100"
+                          />
+                        </div>
                         <div>
                           <label className="text-[10px] uppercase tracking-widest font-bold text-[#8a8a7a] dark:text-zinc-500 mb-1 block">{t.interests}</label>
                           <input 

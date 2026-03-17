@@ -34,6 +34,7 @@ Safety:
 `;
 
 export interface UserProfile {
+  preferredName?: string;
   interests: string;
   goals: string;
   challenges: string;
@@ -46,11 +47,12 @@ function buildSystemInstruction(language: 'en' | 'id', profile?: UserProfile) {
 
   if (profile) {
     instruction += `\n\nUser Context:
+- Preferred Name: ${profile.preferredName || 'Kiddo'}
 - Interests: ${profile.interests || 'Not specified'}
 - Goals: ${profile.goals || 'Not specified'}
 - Challenges: ${profile.challenges || 'Not specified'}
 - Favorite Dad Jokes: ${profile.favorite_jokes || 'Not specified'}
-Use this information to personalize your advice and support. If the user has favorite dad jokes, occasionally reference them or tell similar ones.`;
+Use this information to personalize your advice and support. Address the user by their Preferred Name (${profile.preferredName || 'Kiddo'}) when appropriate. If the user has favorite dad jokes, occasionally reference them or tell similar ones.`;
 
     if (profile.personality === 'mentor') {
       instruction += `\n\nPersonality Archetype: Mentor. Focus on growth, discipline, and practical wisdom. Be slightly more firm but still very supportive.`;

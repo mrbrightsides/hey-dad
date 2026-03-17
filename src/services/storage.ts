@@ -60,6 +60,7 @@ interface Memory {
 }
 
 interface UserProfile {
+  preferredName?: string;
   interests: string;
   goals: string;
   challenges: string;
@@ -233,6 +234,7 @@ export const storage = {
 
   // Profile
   getProfile: () => get<UserProfile>(STORAGE_KEYS.PROFILE, { 
+    preferredName: '',
     interests: '', 
     goals: '', 
     challenges: '', 
