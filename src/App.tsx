@@ -631,7 +631,8 @@ export default function App() {
     document.body.classList.toggle('dark', isDark);
     root.style.colorScheme = isDark ? 'dark' : 'light';
     localStorage.setItem('theme', theme);
-    document.getElementById('theme-meta')?.setAttribute('content', isDark ? '#000000' : '#ffffff');
+    document.getElementById('theme-meta')?.setAttribute('content', isDark ? '#18181b' : '#f5f5f0');
+    document.getElementById('apple-theme-meta')?.setAttribute('content', isDark ? 'black' : 'default');
   }, [theme]);
 
   useEffect(() => {
