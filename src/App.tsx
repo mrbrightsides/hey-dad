@@ -76,6 +76,7 @@ import {
 import { storage } from './services/storage';
 import { 
   getDadResponse, 
+  getDadResponseStream,
   analyzeImageWithDad, 
   getAffirmation, 
   breakdownGoal, 
@@ -888,17 +889,32 @@ export default function App() {
     playSound('success');
     
     // Get Dad's response to checkin
-    const dadResponse = await getDadResponse(
+    const id = Date.now().toString();
+    setMessages(prev => [...prev, { role: 'model', content: '', id }]);
+    
+    const dadResponse = await getDadResponseStream(
       `I just did an emotional check-in. I'm feeling ${newCheckin.feeling}. ${newCheckin.notes ? `I noted: ${newCheckin.notes}` : ''}`,
       messages.slice(-5),
       language,
-      profile
+      profile,
+      (text) => {
+        let dadContent = text;
+        const emotionMatch = dadContent.match(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/);
+        if (emotionMatch) {
+          setCurrentEmotion(emotionMatch[1] as Emotion);
+          dadContent = dadContent.replace(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/, '').trim();
+        }
+        setMessages(prev => prev.map(m => m.id === id ? { ...m, content: dadContent } : m));
+      }
     );
     
-    const id = Date.now().toString();
-    setMessages(prev => [...prev, { role: 'model', content: '', id }]);
-    await typeMessage(dadResponse, id);
-    saveChatMessage('model', dadResponse);
+    let finalDadContent = dadResponse || t.lostThought;
+    const emotionMatch = finalDadContent.match(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/);
+    if (emotionMatch) {
+      finalDadContent = finalDadContent.replace(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/, '').trim();
+    }
+
+    saveChatMessage('model', finalDadContent);
     setIsSubmittingCheckin(false);
   };
 
@@ -1255,26 +1271,38 @@ export default function App() {
     });
 
     try {
-      const response = await getDadResponse(userContent, messages.slice(-20), language, profile);
-      let dadContent = response || t.lostThought;
-      
-      // Parse emotion
-      const emotionMatch = dadContent.match(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/);
-      if (emotionMatch) {
-        setCurrentEmotion(emotionMatch[1] as Emotion);
-        dadContent = dadContent.replace(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/, '').trim();
-      } else {
-        setCurrentEmotion('NEUTRAL');
-      }
-
       const tempDadId = (Date.now() + 1).toString();
       const dadMessage: Message = { role: 'model', content: '', id: tempDadId };
       setMessages(prev => [...prev, dadMessage]);
+      setIsLoading(true);
+
+      const response = await getDadResponseStream(
+        userContent, 
+        messages.slice(-20), 
+        language, 
+        profile,
+        (text) => {
+          let dadContent = text;
+          // Parse emotion from the stream
+          const emotionMatch = dadContent.match(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/);
+          if (emotionMatch) {
+            setCurrentEmotion(emotionMatch[1] as Emotion);
+            dadContent = dadContent.replace(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/, '').trim();
+          }
+          setMessages(prev => prev.map(m => m.id === tempDadId ? { ...m, content: dadContent } : m));
+        }
+      );
+
+      let finalDadContent = response || t.lostThought;
+      const emotionMatch = finalDadContent.match(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/);
+      if (emotionMatch) {
+        finalDadContent = finalDadContent.replace(/\[EMOTION: (HAPPY|SAD|PROUD|CONCERNED|NEUTRAL)\]/, '').trim();
+      }
+
       setIsLoading(false);
-      await typeMessage(dadContent, tempDadId);
       playSound('receive');
       
-      saveChatMessage('model', dadContent).then(realId => {
+      saveChatMessage('model', finalDadContent).then(realId => {
         if (realId) {
           setMessages(prev => prev.map(m => m.id === tempDadId ? { ...m, id: realId.toString() } : m));
         }
@@ -1430,21 +1458,32 @@ export default function App() {
       saveChatMessage('user', userContent);
 
       try {
-        let dadContent = "";
+        const tempDadId = (Date.now() + 1).toString();
+        const dadMessage: Message = { role: 'model', content: '', id: tempDadId };
+        setMessages(prev => [...prev, dadMessage]);
+        setIsLoading(true);
+
+        let finalDadContent = "";
         if (isImage) {
           const response = await analyzeImageWithDad(base64, "What do you see here, Dad? Give me some advice or explain what it is.", language, profile);
-          dadContent = response || "That's interesting! Tell me more about it.";
+          finalDadContent = response || "That's interesting! Tell me more about it.";
+          setMessages(prev => prev.map(m => m.id === tempDadId ? { ...m, content: finalDadContent } : m));
         } else {
-          const response = await getDadResponse(`The user shared a file named "${file.name}". Please acknowledge it and ask how you can help.`, messages.slice(-5), language, profile);
-          dadContent = response || "I see you've shared a file. How can I help you with it?";
+          const response = await getDadResponseStream(
+            `The user shared a file named "${file.name}". Please acknowledge it and ask how you can help.`, 
+            messages.slice(-5), 
+            language, 
+            profile,
+            (text) => {
+              setMessages(prev => prev.map(m => m.id === tempDadId ? { ...m, content: text } : m));
+            }
+          );
+          finalDadContent = response || "I see you've shared a file. How can I help you with it?";
         }
         
-        const dadMessage: Message = { role: 'model', content: '', id: (Date.now() + 1).toString() };
-        setMessages(prev => [...prev, dadMessage]);
         setIsLoading(false);
-        await typeMessage(dadContent, dadMessage.id);
         playSound('receive');
-        saveChatMessage('model', dadContent);
+        saveChatMessage('model', finalDadContent);
       } catch (error) {
         if (error instanceof QuotaExhaustedError) {
           setMessages(prev => [...prev, { role: 'model', content: t.quotaLimitMsg, id: 'quota-error' }]);

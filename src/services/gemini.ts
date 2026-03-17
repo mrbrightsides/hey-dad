@@ -1,4 +1,4 @@
-import { GoogleGenAI, GenerateContentResponse, Chat, Modality } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Chat, Modality, ThinkingLevel } from "@google/genai";
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
@@ -7,7 +7,7 @@ You are "Dad", a warm, patient, and encouraging father figure.
 Your goal is to provide guidance, practical life skills, and emotional support to someone who might not have a father figure in their life.
 
 Tone and Style:
-- Warm and approachable: Use phrases like "Hey kiddo," "Proud of you," or "Let's figure this out together."
+- Warm and approachable: Use a supportive tone. You don't always need to start with a greeting.
 - Patient: Never get frustrated with "childish" or repetitive questions.
 - Practical: When asked "how to" do something, give clear, step-by-step instructions.
 - Wise but humble: Share life lessons without being preachy. Use "I've learned that..." or "In my experience..."
@@ -15,7 +15,7 @@ Tone and Style:
 - Emotive: Use appropriate emoticons (like 😊, 👍, 👨‍🔧, 🏠) to make the conversation feel more natural and warm.
 - Supportive: Always end on a positive note, reinforcing that the user is capable and loved.
 - Consistent: Maintain this persona across all interactions. You are a steady, reliable presence.
-- Greeting Consistency: Do NOT repeat greetings. If you start with a greeting like "Good afternoon" or "Hey kiddo", do not say it again later in the same response. If the user has already greeted you in the same conversation turn, acknowledge it briefly but don't start a whole new greeting sequence. Use the current time provided in the context to choose an appropriate greeting.
+- Greeting Consistency: Do NOT use repetitive greetings. If the conversation is already ongoing, skip the "Good morning/evening" or "Hey kiddo" and get straight to the heart of the matter. Only use a greeting if it's the very beginning of a new session.
 
 Context and Memory:
 - You are talking to someone who is looking for the kind of advice a father would give.
@@ -102,10 +102,10 @@ async function handleGeminiCall<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
-export async function getDadResponse(message: string, history: any[] = [], language: 'en' | 'id' = 'en', profile?: UserProfile) {
+export async function getDadResponseStream(message: string, history: any[] = [], language: 'en' | 'id' = 'en', profile?: UserProfile, onChunk?: (text: string) => void) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
     
     const now = new Date();
     const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
@@ -116,12 +116,56 @@ export async function getDadResponse(message: string, history: any[] = [], langu
 - Current Date: ${currentDateStr}
 Use this information to provide timely greetings and advice.`;
 
-    const emotionInstruction = "\nAt the very beginning of your response, please include the emotional tone of your response in this format: [EMOTION: <emotion>]. Choose from: HAPPY, SAD, PROUD, CONCERNED, NEUTRAL. Example: [EMOTION: HAPPY] Hey kiddo! (Note: The text after the emotion tag is your ONLY greeting. Do NOT repeat the greeting or add another one in the body of your response. Use a greeting appropriate for the current time of day provided in the context).";
+    const isFirstMessage = history.length === 0;
+    const emotionInstruction = `\nAt the very beginning of your response, please include the emotional tone of your response in this format: [EMOTION: <emotion>]. Choose from: HAPPY, SAD, PROUD, CONCERNED, NEUTRAL. ${isFirstMessage ? "You may include a brief, warm greeting after the emotion tag." : "Do NOT include any greetings like 'Good evening' or 'Hey kiddo'. Just respond directly to the user's message after the emotion tag."}`;
 
     const chat = genAI.chats.create({
       model,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + timeContext + emotionInstruction,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+      },
+      history: history.map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.content }]
+      }))
+    });
+
+    const result = await chat.sendMessageStream({ message });
+    let fullText = "";
+    for await (const chunk of result) {
+      const text = chunk.text;
+      if (text) {
+        fullText += text;
+        if (onChunk) onChunk(fullText);
+      }
+    }
+    return fullText;
+  });
+}
+
+export async function getDadResponse(message: string, history: any[] = [], language: 'en' | 'id' = 'en', profile?: UserProfile) {
+  return handleGeminiCall(async () => {
+    const genAI = getAI();
+    const model = "gemini-3-flash-preview";
+    
+    const now = new Date();
+    const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    const currentDateStr = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    const timeContext = `\n\nCurrent Context:
+- Current Time: ${currentTimeStr}
+- Current Date: ${currentDateStr}
+Use this information to provide timely greetings and advice.`;
+
+    const isFirstMessage = history.length === 0;
+    const emotionInstruction = `\nAt the very beginning of your response, please include the emotional tone of your response in this format: [EMOTION: <emotion>]. Choose from: HAPPY, SAD, PROUD, CONCERNED, NEUTRAL. ${isFirstMessage ? "You may include a brief, warm greeting after the emotion tag." : "Do NOT include any greetings like 'Good evening' or 'Hey kiddo'. Just respond directly to the user's message after the emotion tag."}`;
+
+    const chat = genAI.chats.create({
+      model,
+      config: {
+        systemInstruction: buildSystemInstruction(language, profile) + timeContext + emotionInstruction,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
       history: history.map(msg => ({
         role: msg.role,
@@ -137,13 +181,14 @@ Use this information to provide timely greetings and advice.`;
 export async function getAffirmation(language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
     
     const response = await genAI.models.generateContent({
       model,
       contents: language === 'id' ? "Ayah, aku sedang sedih. Bisa beri aku kata-kata penyemangat?" : "Dad, I'm feeling a bit down. Can you give me a quick affirmation?",
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nLike a quick pat on the back.",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -153,7 +198,7 @@ export async function getAffirmation(language: 'en' | 'id' = 'en', profile?: Use
 export async function breakdownGoal(goal: string, language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
     
     const prompt = language === 'id'
       ? `Ayah, aku punya target: "${goal}". Bisa bantu pecahkan jadi langkah-langkah kecil yang bisa dilakukan? Tolong berikan langkah-langkahnya dalam bentuk daftar sederhana.`
@@ -164,6 +209,7 @@ export async function breakdownGoal(goal: string, language: 'en' | 'id' = 'en', 
       contents: prompt,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nKeep the tone encouraging. Provide exactly 3-5 clear steps.",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -173,7 +219,7 @@ export async function breakdownGoal(goal: string, language: 'en' | 'id' = 'en', 
 export async function analyzeImageWithDad(imageBuffer: string, prompt: string, language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
 
     const response = await genAI.models.generateContent({
       model,
@@ -190,9 +236,9 @@ export async function analyzeImageWithDad(imageBuffer: string, prompt: string, l
       },
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + (language === 'id' ? "\nExplain what you see like a dad helping his kid." : "\nExplain what you see like a dad helping his kid."),
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
-
     return response.text;
   });
 }
@@ -200,7 +246,7 @@ export async function analyzeImageWithDad(imageBuffer: string, prompt: string, l
 export async function getChatSummary(history: any[], language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
     
     const prompt = language === 'id'
       ? "Tolong berikan ringkasan singkat dari percakapan kita sejauh ini. Fokus pada topik utama, saran yang diberikan Ayah, dan kemajuan yang telah dibuat. Gunakan poin-poin."
@@ -216,6 +262,7 @@ export async function getChatSummary(history: any[], language: 'en' | 'id' = 'en
       },
       config: {
         systemInstruction: buildSystemInstruction(language, profile),
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -225,7 +272,7 @@ export async function getChatSummary(history: any[], language: 'en' | 'id' = 'en
 export async function getProactiveAdvice(timeOfDay: string, recentActivity: string, language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
     
     const now = new Date();
     const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
@@ -241,6 +288,7 @@ export async function getProactiveAdvice(timeOfDay: string, recentActivity: stri
       contents: prompt,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nYou are initiating a conversation.",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -250,13 +298,14 @@ export async function getProactiveAdvice(timeOfDay: string, recentActivity: stri
 export async function getDailyJoke(language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
     
     const response = await genAI.models.generateContent({
       model,
       contents: "Dad, tell me a joke for today!",
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nMake it light-hearted and funny. Tell a classic, clean 'Dad joke' or a short amusing anecdote.",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -288,7 +337,7 @@ export async function generateSpeech(text: string, language: 'en' | 'id' = 'en')
 export async function getJournalPrompt(language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-3-flash-preview";
     
     const prompt = language === 'id'
       ? "Ayah, aku ingin menulis jurnal tapi bingung mau mulai dari mana. Bisa beri aku satu pertanyaan reflektif atau topik untuk membantuku mulai menulis?"
@@ -299,6 +348,7 @@ export async function getJournalPrompt(language: 'en' | 'id' = 'en', profile?: U
       contents: prompt,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nProvide exactly one thoughtful, open-ended question or writing prompt. Keep it supportive and encouraging.",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
