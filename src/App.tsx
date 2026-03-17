@@ -50,6 +50,7 @@ import {
   Moon,
   Sun,
   Share2,
+  RefreshCw,
   Users
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
@@ -68,6 +69,7 @@ import {
   Pie,
   Cell
 } from 'recharts';
+import { storage } from './services/storage';
 import { 
   getDadResponse, 
   analyzeImageWithDad, 
@@ -239,7 +241,6 @@ const TRANSLATIONS = {
     calendar: "Calendar",
     memoryBox: "Memory Box",
     journal: "Journal",
-    community: "Community",
     askDad: "Ask Dad anything...",
     needBoost: "Need a boost?",
     toolboxTitle: "Practical Life Skills",
@@ -279,15 +280,7 @@ const TRANSLATIONS = {
     journalAchievement: "Achievement",
     journalLearning: "Learning",
     noJournal: "No entries yet. Start chatting with Dad or mastering skills to fill your journal!",
-    communityTitle: "Community Feed",
-    communityDesc: "See what other kids are learning and achieving. Share your own milestones and Dad's best advice!",
-    shareToCommunity: "Share to Community",
-    postToCommunity: "Post to Community",
-    sharedToCommunity: "Shared to community! High five, kiddo!",
     shareSocial: "Share to Social Media",
-    milestone: "Milestone",
-    advice: "Advice",
-    noPosts: "The community is quiet today. Be the first to share something!",
     footerNote: "Remember: Dad is here to help, but always consult professionals for serious matters.",
     footerBuild: "Built with love by Akhmad Khudri",
     initialGreeting: "Hey kiddo! I'm so glad you're here. What's on your mind today? Whether you need to fix something, learn a new skill, or just want to talk, I'm all ears.",
@@ -320,7 +313,6 @@ const TRANSLATIONS = {
     dailyJoke: "Dad's Daily Joke",
     getJoke: "Tell me a joke, Dad!",
     newJoke: "New Joke",
-    proactiveGreeting: "Good {time}, kiddo!",
     morning: "morning",
     afternoon: "afternoon",
     evening: "evening",
@@ -387,7 +379,6 @@ const TRANSLATIONS = {
     calendar: "Kalender",
     memoryBox: "Kotak Kenangan",
     journal: "Jurnal",
-    community: "Komunitas",
     askDad: "Tanya Ayah apa saja...",
     needBoost: "Butuh semangat?",
     toolboxTitle: "Keterampilan Hidup Praktis",
@@ -427,15 +418,7 @@ const TRANSLATIONS = {
     journalAchievement: "Pencapaian",
     journalLearning: "Pembelajaran",
     noJournal: "Belum ada entri. Mulailah mengobrol dengan Ayah atau kuasai keterampilan untuk mengisi jurnalmu!",
-    communityTitle: "Umpan Komunitas",
-    communityDesc: "Lihat apa yang dipelajari dan dicapai anak-anak lain. Bagikan pencapaianmu sendiri dan nasihat terbaik Ayah!",
-    shareToCommunity: "Bagikan ke Komunitas",
-    postToCommunity: "Kirim ke Komunitas",
-    sharedToCommunity: "Berhasil dibagikan ke komunitas! Tos dulu, nak!",
     shareSocial: "Bagikan ke Media Sosial",
-    milestone: "Pencapaian",
-    advice: "Nasihat",
-    noPosts: "Komunitas sedang sepi hari ini. Jadilah yang pertama berbagi sesuatu!",
     footerNote: "Ingat: Ayah di sini untuk membantu, tetapi selalu konsultasikan dengan profesional untuk masalah serius.",
     footerBuild: "Dibuat dengan cinta untuk Next-Level Product Sprint 2026",
     initialGreeting: "Halo nak! Ayah senang kamu di sini. Apa yang sedang kamu pikirkan hari ini? Apakah kamu perlu memperbaiki sesuatu, mempelajari keterampilan baru, atau hanya ingin mengobrol, Ayah siap mendengarkan.",
@@ -468,7 +451,6 @@ const TRANSLATIONS = {
     dailyJoke: "Candaan Harian Ayah",
     getJoke: "Kasih candaan dong, Yah!",
     newJoke: "Candaan Baru",
-    proactiveGreeting: "Selamat {time}, nak!",
     morning: "pagi",
     afternoon: "siang",
     evening: "sore",
@@ -542,18 +524,8 @@ interface Memory {
   date: string;
 }
 
-interface CommunityPost {
-  id: number;
-  title: string;
-  content: string;
-  author: string;
-  type: 'advice' | 'milestone';
-  date: string;
-  likes: number;
-}
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'toolbox' | 'journal' | 'calendar' | 'memoryBox' | 'profile' | 'community'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'toolbox' | 'journal' | 'calendar' | 'memoryBox' | 'profile'>('chat');
   const [profileSubTab, setProfileSubTab] = useState<'about' | 'goals' | 'safety' | 'progress'>('about');
   const [language, setLanguage] = useState<'en' | 'id'>('en');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -574,6 +546,7 @@ export default function App() {
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('NEUTRAL');
   const [dailyJoke, setDailyJoke] = useState<string | null>(null);
   const [isJokeCollapsed, setIsJokeCollapsed] = useState(false);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [isFetchingJoke, setIsFetchingJoke] = useState(false);
   
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
@@ -594,8 +567,6 @@ export default function App() {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [isPrompting, setIsPrompting] = useState(false);
-  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
-  const [isFetchingCommunity, setIsFetchingCommunity] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
@@ -634,29 +605,14 @@ export default function App() {
     fetchGoals();
     fetchChatHistory();
     fetchEmergencyContacts();
-    fetchDailyJoke();
     fetchCalendarEvents();
     fetchMemories();
     fetchSkillOfTheWeek();
     fetchProfile();
     fetchCheckins();
     fetchStats();
-    fetchCommunityPosts();
     handleProactiveGreeting();
   }, []);
-
-  const fetchCommunityPosts = async () => {
-    setIsFetchingCommunity(true);
-    try {
-      const res = await fetch('/api/community');
-      const data = await res.json();
-      setCommunityPosts(data);
-    } catch (e) {
-      console.error("Failed to fetch community posts", e);
-    } finally {
-      setIsFetchingCommunity(false);
-    }
-  };
 
   const handleShare = async (title: string, text: string) => {
     if (navigator.share) {
@@ -679,77 +635,31 @@ export default function App() {
     }
   };
 
-  const postToCommunity = async (title: string, content: string, type: 'advice' | 'milestone') => {
-    try {
-      await fetch('/api/community', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, type, author: profile.interests.split(',')[0] || 'Kiddo' })
-      });
-      fetchCommunityPosts();
-      playSound('success');
-      alert(t.sharedToCommunity);
-    } catch (e) {
-      console.error("Failed to post to community", e);
-    }
-  };
-
-  const likePost = async (id: number) => {
-    try {
-      await fetch(`/api/community/${id}/like`, { method: 'POST' });
-      setCommunityPosts(prev => prev.map(p => p.id === id ? { ...p, likes: p.likes + 1 } : p));
-    } catch (e) {
-      console.error("Failed to like post", e);
-    }
-  };
-
   const fetchProfile = async () => {
-    try {
-      const res = await fetch('/api/profile');
-      const data = await res.json();
-      setProfile(data);
-      const hasSeenOnboardingLocal = localStorage.getItem('has_seen_onboarding');
-      if (data.has_onboarded === 0 && !hasSeenOnboardingLocal) {
-        setShowOnboarding(true);
-      }
-    } catch (e) {
-      console.error("Failed to fetch profile", e);
+    const data = storage.getProfile();
+    setProfile(data);
+    const hasSeenOnboardingLocal = localStorage.getItem('has_seen_onboarding');
+    if (data.has_onboarded === 0 && !hasSeenOnboardingLocal) {
+      setShowOnboarding(true);
     }
   };
 
   const fetchCheckins = async () => {
-    try {
-      const res = await fetch('/api/checkins');
-      const data = await res.json();
-      setCheckins(data);
-    } catch (e) {
-      console.error("Failed to fetch checkins", e);
-    }
+    const data = storage.getCheckins();
+    setCheckins(data);
   };
 
   const fetchStats = async () => {
-    try {
-      const res = await fetch('/api/stats');
-      const data = await res.json();
-      setStats(data);
-    } catch (e) {
-      console.error("Failed to fetch stats", e);
-    }
+    const data = storage.getStats();
+    setStats(data);
   };
 
   const completeOnboarding = async () => {
     localStorage.setItem('has_seen_onboarding', 'true');
-    try {
-      await fetch('/api/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...profile, has_onboarded: 1 }),
-      });
-      setProfile({ ...profile, has_onboarded: 1 });
-      setShowOnboarding(false);
-    } catch (e) {
-      console.error("Failed to complete onboarding", e);
-    }
+    const updatedProfile = { ...profile, has_onboarded: 1 };
+    storage.updateProfile(updatedProfile);
+    setProfile(updatedProfile);
+    setShowOnboarding(false);
   };
 
   const getJournalPrompt = async () => {
@@ -775,176 +685,107 @@ export default function App() {
   };
 
   const updateProfile = async () => {
-    try {
-      await fetch('/api/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profile)
-      });
-      playSound('success');
-      alert(t.profileSaved);
-    } catch (e) {
-      console.error("Failed to update profile", e);
-    }
+    storage.updateProfile(profile);
+    playSound('success');
+    alert(t.profileSaved);
   };
 
   const submitCheckin = async () => {
     setIsSubmittingCheckin(true);
-    try {
-      await fetch('/api/checkins', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCheckin)
-      });
-      await fetch('/api/stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ feature: 'checkin' })
-      });
-      setNewCheckin({ feeling: 'Happy', notes: '' });
-      setShowCheckinModal(false);
-      fetchCheckins();
-      fetchStats();
-      playSound('success');
-      
-      // Get Dad's response to checkin
-      const dadResponse = await getDadResponse(
-        `I just did an emotional check-in. I'm feeling ${newCheckin.feeling}. ${newCheckin.notes ? `I noted: ${newCheckin.notes}` : ''}`,
-        messages.slice(-5),
-        language,
-        profile
-      );
-      
-      const id = Date.now().toString();
-      setMessages(prev => [...prev, { role: 'model', content: '', id }]);
-      await typeMessage(dadResponse, id);
-      saveChatMessage('model', dadResponse);
-    } catch (e) {
-      console.error("Failed to submit checkin", e);
-    } finally {
-      setIsSubmittingCheckin(false);
-    }
+    storage.addCheckin(newCheckin);
+    storage.logEngagement('checkin');
+    
+    setNewCheckin({ feeling: 'Happy', notes: '' });
+    setShowCheckinModal(false);
+    fetchCheckins();
+    fetchStats();
+    playSound('success');
+    
+    // Get Dad's response to checkin
+    const dadResponse = await getDadResponse(
+      `I just did an emotional check-in. I'm feeling ${newCheckin.feeling}. ${newCheckin.notes ? `I noted: ${newCheckin.notes}` : ''}`,
+      messages.slice(-5),
+      language,
+      profile
+    );
+    
+    const id = Date.now().toString();
+    setMessages(prev => [...prev, { role: 'model', content: '', id }]);
+    await typeMessage(dadResponse, id);
+    saveChatMessage('model', dadResponse);
+    setIsSubmittingCheckin(false);
   };
 
   const logEngagement = async (feature: string) => {
-    try {
-      await fetch('/api/stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ feature })
-      });
-      fetchStats();
-    } catch (e) {
-      console.error("Failed to log engagement", e);
-    }
+    storage.logEngagement(feature);
+    fetchStats();
   };
 
   const fetchMemories = async () => {
-    try {
-      const res = await fetch('/api/memories');
-      const data = await res.json();
-      setMemories(data);
-    } catch (e) {
-      console.error("Failed to fetch memories", e);
-    }
+    const data = storage.getMemories();
+    setMemories(data);
   };
 
   const fetchSkillOfTheWeek = async () => {
-    try {
-      const res = await fetch('/api/skill-of-the-week');
-      const data = await res.json();
-      setSkillOfTheWeek(data.skill);
-    } catch (e) {
-      console.error("Failed to fetch skill of the week", e);
-    }
+    const data = storage.getSkillOfTheWeek();
+    setSkillOfTheWeek(data.skill);
   };
 
   const checkAndIncrementQuota = async () => {
-    try {
-      const res = await fetch('/api/quota');
-      const data = await res.json();
-      if (data.count >= data.limit) {
-        return false;
-      }
-      await fetch('/api/quota/increment', { method: 'POST' });
-      return true;
-    } catch (e) {
-      console.error("Quota check failed", e);
-      return true;
+    const today = new Date().toISOString().split('T')[0];
+    const quotaData = JSON.parse(localStorage.getItem('dad_quota') || '{"date":"","count":0}');
+    
+    if (quotaData.date !== today) {
+      quotaData.date = today;
+      quotaData.count = 0;
     }
+
+    const LIMIT = 50; // Daily limit for local storage
+    if (quotaData.count >= LIMIT) {
+      return false;
+    }
+
+    quotaData.count += 1;
+    localStorage.setItem('dad_quota', JSON.stringify(quotaData));
+    return true;
   };
 
   const saveMemory = async (content: string, source: string = 'advice') => {
     setIsSavingMemory(true);
-    try {
-      await fetch('/api/memories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, source })
-      });
-      fetchMemories();
-      playSound('success');
-    } catch (e) {
-      console.error("Failed to save memory", e);
-    } finally {
-      setIsSavingMemory(false);
-    }
+    storage.addMemory(content, source);
+    fetchMemories();
+    playSound('success');
+    setIsSavingMemory(false);
   };
 
   const deleteMemory = async (id: number) => {
-    try {
-      await fetch(`/api/memories/${id}`, { method: 'DELETE' });
-      setMemories(memories.filter(m => m.id !== id));
-    } catch (e) {
-      console.error("Failed to delete memory", e);
-    }
+    storage.deleteMemory(id);
+    setMemories(memories.filter(m => m.id !== id));
   };
 
   const fetchCalendarEvents = async () => {
-    try {
-      const res = await fetch('/api/calendar');
-      const data = await res.json();
-      setCalendarEvents(data);
-    } catch (e) {
-      console.error("Failed to fetch calendar events", e);
-    }
+    const data = storage.getCalendarEvents();
+    setCalendarEvents(data);
   };
 
   const addCalendarEvent = async () => {
     if (!newEvent.title || !newEvent.date) return;
-    try {
-      const res = await fetch('/api/calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newEvent)
-      });
-      const data = await res.json();
-      setCalendarEvents([...calendarEvents, { ...newEvent, id: data.id }]);
-      setNewEvent({ title: '', date: '', type: 'event' });
-    } catch (e) {
-      console.error("Failed to add calendar event", e);
-    }
+    storage.addCalendarEvent(newEvent);
+    setNewEvent({ title: '', date: '', type: 'event' });
+    fetchCalendarEvents();
+    playSound('success');
   };
 
   const deleteCalendarEvent = async (id: number) => {
-    try {
-      await fetch(`/api/calendar/${id}`, { method: 'DELETE' });
-      setCalendarEvents(calendarEvents.filter(e => e.id !== id));
-    } catch (e) {
-      console.error("Failed to delete calendar event", e);
-    }
+    storage.deleteCalendarEvent(id);
+    fetchCalendarEvents();
   };
 
   const resetAllData = async () => {
     if (!window.confirm(t.resetConfirm)) return;
-    try {
-      localStorage.removeItem('has_seen_onboarding');
-      await fetch('/api/reset', { method: 'POST' });
-      alert(t.resetSuccess);
-      window.location.reload();
-    } catch (e) {
-      console.error("Failed to reset data", e);
-    }
+    localStorage.clear();
+    alert(t.resetSuccess);
+    window.location.reload();
   };
 
   const reorderSteps = async (goalId: number, newSteps: GoalStep[]) => {
@@ -952,41 +793,31 @@ export default function App() {
     // Update local state
     setGoals(goals.map(g => g.id === goalId ? { ...g, steps: updatedSteps } : g));
     
-    // Update backend
-    try {
-      await fetch('/api/goals/steps/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ steps: updatedSteps.map(s => ({ id: s.id, order_index: s.order_index })) })
-      });
-    } catch (e) {
-      console.error("Failed to reorder steps", e);
-    }
+    // Update storage
+    const goalsData = storage.getGoals();
+    const updatedGoals = goalsData.map(g => {
+      if (g.id === goalId) {
+        return { ...g, steps: updatedSteps };
+      }
+      return g;
+    });
+    localStorage.setItem('dad_goals', JSON.stringify(updatedGoals));
   };
 
   const reorderGoals = async (newGoals: Goal[]) => {
     const updatedGoals = newGoals.map((g, i) => ({ ...g, order_index: i }));
     setGoals(updatedGoals);
-    
-    try {
-      await fetch('/api/goals/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ goals: updatedGoals.map(g => ({ id: g.id, order_index: g.order_index })) })
-      });
-    } catch (e) {
-      console.error("Failed to reorder goals", e);
-    }
+    localStorage.setItem('dad_goals', JSON.stringify(updatedGoals));
   };
 
   const fetchDailyJoke = async () => {
+    setIsFetchingJoke(true);
     try {
-      const res = await fetch('/api/daily-joke');
-      const data = await res.json();
-      if (data.joke) {
-        setDailyJoke(data.joke);
+      const existing = await storage.getDailyJoke();
+      if (existing) {
+        setDailyJoke(existing);
       } else {
-        // Fetch from Gemini if not in DB
+        // Fetch from Gemini if not in storage
         const allowed = await checkAndIncrementQuota();
         if (!allowed) return;
         
@@ -994,12 +825,7 @@ export default function App() {
           const joke = await getDailyJoke(language, profile);
           if (joke) {
             setDailyJoke(joke);
-            // Save to DB
-            await fetch('/api/daily-joke', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ joke })
-            });
+            storage.saveDailyJoke(joke);
           }
         } catch (e) {
           if (e instanceof QuotaExhaustedError) {
@@ -1011,13 +837,14 @@ export default function App() {
       }
     } catch (e) {
       console.error("Failed to fetch daily joke", e);
+    } finally {
+      setIsFetchingJoke(false);
     }
   };
 
   const handleProactiveGreeting = async () => {
     // Check if we already have messages today
-    const res = await fetch('/api/chat');
-    const history = await res.json();
+    const history = storage.getChatHistory();
     if (history.length > 0) return;
 
     const now = new Date();
@@ -1050,8 +877,7 @@ export default function App() {
     try {
       const advice = await getProactiveAdvice(timeOfDay, recentActivity, language, profile);
       if (advice) {
-        const greeting = t.proactiveGreeting.replace('{time}', timeOfDay);
-        const fullGreeting = `${greeting}\n\n${advice}`;
+        const fullGreeting = advice;
         const id = 'proactive';
         setMessages([{ role: 'model', content: '', id }]);
         await typeMessage(fullGreeting, id);
@@ -1087,145 +913,64 @@ export default function App() {
   };
 
   const fetchChatHistory = async () => {
-    try {
-      const res = await fetch('/api/chat');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.length === 0) {
-          setMessages([{ role: 'model', content: t.initialGreeting, id: 'initial' }]);
-        } else {
-          setMessages(data.map((m: any) => ({ ...m, id: m.id.toString() })));
-        }
-      } else {
-        console.error(`Failed to fetch chat history: ${res.status} ${res.statusText}`);
-      }
-    } catch (e) {
-      console.error("Failed to fetch chat history (network error):", e);
+    const data = storage.getChatHistory();
+    if (data.length === 0) {
+      setMessages([{ role: 'model', content: t.initialGreeting, id: 'initial' }]);
+    } else {
+      setMessages(data);
     }
   };
 
   const saveChatMessage = async (role: 'user' | 'model', content: string) => {
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, content })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.id;
-      }
-    } catch (e) {
-      console.error("Failed to save chat message", e);
-    }
-    return null;
+    const newMessage = storage.saveChatMessage(role, content);
+    return newMessage.id;
   };
 
   const deleteChatMessage = async (id: string) => {
     if (id === 'initial' || id.startsWith('quota-') || id === 'error') return;
-    try {
-      const res = await fetch(`/api/chat/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setMessages(prev => prev.filter(m => m.id !== id));
-      }
-    } catch (e) {
-      console.error("Failed to delete chat message", e);
-    }
+    storage.deleteChatMessage(id);
+    setMessages(prev => prev.filter(m => m.id !== id));
   };
 
   const fetchSkills = async () => {
-    try {
-      const res = await fetch('/api/skills');
-      if (res.ok) {
-        const data = await res.json();
-        setSkills(data);
-      } else {
-        console.error(`Failed to fetch skills: ${res.status} ${res.statusText}`);
-      }
-    } catch (e) {
-      console.error("Failed to fetch skills (network error):", e);
-    }
+    const data = storage.getSkills();
+    setSkills(data);
   };
 
   const fetchJournal = async () => {
-    try {
-      const res = await fetch('/api/journal');
-      if (res.ok) {
-        const data = await res.json();
-        setJournal(data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch journal", e);
-    }
+    const data = storage.getJournal();
+    setJournal(data);
   };
 
   const addJournalEntry = async () => {
     if (!newJournalEntry.title || !newJournalEntry.content) return;
-    try {
-      const res = await fetch('/api/journal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newJournalEntry)
-      });
-      if (res.ok) {
-        setNewJournalEntry({ title: '', content: '', category: 'Personal', date: new Date().toISOString().split('T')[0] });
-        fetchJournal();
-        playSound('success');
-      }
-    } catch (e) {
-      console.error("Failed to add journal entry", e);
-    }
+    storage.addJournalEntry(newJournalEntry);
+    setNewJournalEntry({ title: '', content: '', category: 'Personal', date: new Date().toISOString().split('T')[0] });
+    fetchJournal();
+    playSound('success');
   };
 
   const fetchGoals = async () => {
-    try {
-      const res = await fetch('/api/goals');
-      if (res.ok) {
-        const data = await res.json();
-        setGoals(data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch goals", e);
-    }
+    const data = storage.getGoals();
+    setGoals(data);
   };
 
   const fetchEmergencyContacts = async () => {
-    try {
-      const res = await fetch('/api/emergency-contacts');
-      if (res.ok) {
-        const data = await res.json();
-        setEmergencyContacts(data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch emergency contacts", e);
-    }
+    const data = storage.getEmergencyContacts();
+    setEmergencyContacts(data);
   };
 
   const addEmergencyContact = async () => {
     if (!newContact.name || !newContact.phone) return;
-    try {
-      const res = await fetch('/api/emergency-contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newContact)
-      });
-      if (res.ok) {
-        setNewContact({ name: '', phone: '', relationship: '' });
-        fetchEmergencyContacts();
-        playSound('success');
-      }
-    } catch (e) {
-      console.error("Failed to add contact", e);
-    }
+    storage.addEmergencyContact(newContact);
+    setNewContact({ name: '', phone: '', relationship: '' });
+    fetchEmergencyContacts();
+    playSound('success');
   };
 
   const deleteEmergencyContact = async (id: number) => {
-    try {
-      const res = await fetch(`/api/emergency-contacts/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchEmergencyContacts();
-    } catch (e) {
-      console.error("Failed to delete contact", e);
-    }
+    storage.deleteEmergencyContact(id);
+    fetchEmergencyContacts();
   };
 
   const typeMessage = async (content: string, id: string) => {
@@ -1534,21 +1279,18 @@ export default function App() {
   };
 
   const completeSkill = async (id: number) => {
-    await fetch(`/api/skills/${id}/complete`, { method: 'POST' });
+    storage.completeSkill(id);
     playSound('success');
     setShowCelebration(true);
     setTimeout(() => setShowCelebration(false), 5000);
     fetchSkills();
     const skill = skills.find(s => s.id === id);
     if (skill) {
-      await fetch('/api/journal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: t.masteredJournalTitle.replace('{skill}', skill.name),
-          content: t.masteredJournalContent.replace('{skill}', skill.name.toLowerCase()),
-          category: 'Skill'
-        })
+      storage.addJournalEntry({
+        title: t.masteredJournalTitle.replace('{skill}', skill.name),
+        content: t.masteredJournalContent.replace('{skill}', skill.name.toLowerCase()),
+        category: 'Skill',
+        date: new Date().toISOString().split('T')[0]
       });
       fetchJournal();
     }
@@ -1566,11 +1308,7 @@ export default function App() {
       const breakdown = await breakdownGoal(newGoalTitle, language, profile);
       const steps = breakdown.split('\n').filter(s => s.trim().length > 0).map(s => s.replace(/^\d+\.\s*/, '').trim());
       
-      await fetch('/api/goals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newGoalTitle, description: t.goalBrokenDesc, steps })
-      });
+      storage.addGoal(newGoalTitle, t.goalBrokenDesc, steps);
       
       setNewGoalTitle('');
       fetchGoals();
@@ -1587,17 +1325,13 @@ export default function App() {
   };
 
   const toggleStep = async (stepId: number, completed: boolean) => {
-    await fetch(`/api/goals/steps/${stepId}/toggle`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ completed })
-    });
+    storage.toggleGoalStep(stepId, completed);
     if (completed) playSound('success');
     fetchGoals();
   };
 
   const deleteGoal = async (id: number) => {
-    await fetch(`/api/goals/${id}`, { method: 'DELETE' });
+    storage.deleteGoal(id);
     fetchGoals();
   };
 
@@ -1646,12 +1380,6 @@ export default function App() {
                 className={cn("px-4 py-2 rounded-full transition-all whitespace-nowrap", activeTab === 'journal' ? "bg-white dark:bg-zinc-700 text-[#5A5A40] dark:text-emerald-400 shadow-sm" : "text-[#8a8a7a] dark:text-zinc-400 hover:text-[#5A5A40] dark:hover:text-emerald-400")}
               >
                 {t.journal}
-              </button>
-              <button 
-                onClick={() => setActiveTab('community')}
-                className={cn("px-4 py-2 rounded-full transition-all whitespace-nowrap", activeTab === 'community' ? "bg-white dark:bg-zinc-700 text-[#5A5A40] dark:text-emerald-400 shadow-sm" : "text-[#8a8a7a] dark:text-zinc-400 hover:text-[#5A5A40] dark:hover:text-emerald-400")}
-              >
-                {t.community}
               </button>
               <button 
                 onClick={() => setActiveTab('calendar')}
@@ -1734,20 +1462,20 @@ export default function App() {
             >
               <div className="flex-1 overflow-y-auto mb-4 space-y-6 pr-2 custom-scrollbar">
                 {/* Daily Joke Card */}
-                {dailyJoke && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/10 dark:to-amber-900/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-900/30 shadow-sm mb-4 relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 right-0 p-2 opacity-10">
-                      <Smile size={48} className="dark:text-orange-400" />
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/10 dark:to-amber-900/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-900/30 shadow-sm mb-4 relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 p-2 opacity-10">
+                    <Smile size={48} className="dark:text-orange-400" />
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-orange-500 dark:text-orange-400" />
+                      <h3 className="text-xs font-sans font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">{t.dailyJoke}</h3>
                     </div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Sparkles size={16} className="text-orange-500 dark:text-orange-400" />
-                        <h3 className="text-xs font-sans font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">{t.dailyJoke}</h3>
-                      </div>
+                    {dailyJoke && (
                       <button 
                         onClick={() => setIsJokeCollapsed(!isJokeCollapsed)}
                         className="p-1 hover:bg-orange-200/50 dark:hover:bg-orange-900/30 rounded-lg transition-colors text-orange-700 dark:text-orange-400 z-10"
@@ -1755,7 +1483,26 @@ export default function App() {
                       >
                         {isJokeCollapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
                       </button>
+                    )}
+                  </div>
+                  
+                  {!dailyJoke ? (
+                    <div className="flex flex-col items-center gap-3 py-2">
+                      <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">{t.needBoost}</p>
+                      <button
+                        onClick={fetchDailyJoke}
+                        disabled={isFetchingJoke}
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-full text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        {isFetchingJoke ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Smile size={14} />
+                        )}
+                        {t.getJoke}
+                      </button>
                     </div>
+                  ) : (
                     <AnimatePresence initial={false}>
                       {!isJokeCollapsed && (
                         <motion.div
@@ -1763,13 +1510,22 @@ export default function App() {
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
                           transition={{ duration: 0.3, ease: "easeInOut" }}
+                          className="relative"
                         >
                           <p className="text-sm md:text-base text-orange-900 dark:text-orange-200 italic leading-relaxed pt-1">"{dailyJoke}"</p>
+                          <button 
+                            onClick={fetchDailyJoke}
+                            disabled={isFetchingJoke}
+                            className="mt-3 text-[10px] font-bold uppercase tracking-widest text-orange-600 dark:text-orange-400 hover:text-orange-700 flex items-center gap-1 transition-colors"
+                          >
+                            <RefreshCw size={10} className={isFetchingJoke ? "animate-spin" : ""} />
+                            {t.newJoke}
+                          </button>
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </motion.div>
-                )}
+                  )}
+                </motion.div>
 
                 <AnimatePresence initial={false}>
                   {messages.map((msg) => (
@@ -1787,18 +1543,22 @@ export default function App() {
                       )}>
                         {msg.role === 'user' ? <User size={16} className="md:w-5 md:h-5" /> : <Smile size={16} className="md:w-5 md:h-5" />}
                       </div>
-                      <div className={cn(
-                        "max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl shadow-sm relative group/msg",
-                        msg.role === 'user' ? "bg-white dark:bg-zinc-800 rounded-tr-none border border-indigo-50 dark:border-indigo-900/30" : "bg-[#f0f0e8] dark:bg-zinc-900 rounded-tl-none border border-[#e5e5d5] dark:border-zinc-800"
-                      )}>
+                      <div 
+                        onClick={() => setSelectedMessageId(selectedMessageId === msg.id ? null : msg.id)}
+                        className={cn(
+                          "max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl shadow-sm relative group/msg cursor-pointer md:cursor-default",
+                          msg.role === 'user' ? "bg-white dark:bg-zinc-800 rounded-tr-none border border-indigo-50 dark:border-indigo-900/30" : "bg-[#f0f0e8] dark:bg-zinc-900 rounded-tl-none border border-[#e5e5d5] dark:border-zinc-800"
+                        )}
+                      >
                         <div className="prose prose-stone dark:prose-invert prose-sm max-w-none text-sm md:text-base">
                           <ReactMarkdown>{msg.content}</ReactMarkdown>
                         </div>
                         
                         {/* Message Actions */}
                         <div className={cn(
-                          "mt-2 pt-2 border-t border-[#e5e5d5] dark:border-zinc-800 flex items-center justify-between opacity-0 group-hover/msg:opacity-100 transition-opacity",
-                          msg.role === 'user' ? "flex-row-reverse" : "flex-row"
+                          "mt-2 pt-2 border-t border-[#e5e5d5] dark:border-zinc-800 flex items-center justify-between transition-all duration-200",
+                          msg.role === 'user' ? "flex-row-reverse" : "flex-row",
+                          selectedMessageId === msg.id ? "opacity-100 h-auto" : "opacity-0 md:group-hover/msg:opacity-100 h-0 md:h-auto overflow-hidden md:overflow-visible"
                         )}>
                           <div className="flex gap-2">
                             {msg.role === 'model' && (
@@ -1828,13 +1588,6 @@ export default function App() {
                                   title={t.shareSocial}
                                 >
                                   <Share2 size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => postToCommunity(t.appName, msg.content, 'advice')}
-                                  className="p-1.5 rounded-lg text-[#d5d5c5] dark:text-zinc-600 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"
-                                  title={t.shareToCommunity}
-                                >
-                                  <Users size={14} />
                                 </button>
                                 <button 
                                   onClick={() => handleRating(msg.id, 1, msg.content)}
@@ -2217,13 +1970,6 @@ export default function App() {
                             <Share2 size={18} />
                           </button>
                           <button 
-                            onClick={() => postToCommunity(t.memoryBoxTitle, memory.content, 'advice')}
-                            className="p-2 text-[#8a8a7a] dark:text-zinc-500 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors"
-                            title={t.shareToCommunity}
-                          >
-                            <Users size={18} />
-                          </button>
-                          <button 
                             onClick={() => deleteMemory(memory.id)}
                             className="p-2 text-[#8a8a7a] dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                           >
@@ -2529,13 +2275,6 @@ export default function App() {
                                 >
                                   <Share2 size={18} />
                                 </button>
-                                <button 
-                                  onClick={() => postToCommunity(goal.title, goal.description || t.goalsTitle, 'milestone')}
-                                  className="text-[#8a8a7a] dark:text-zinc-500 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors p-1"
-                                  title={t.shareToCommunity}
-                                >
-                                  <Users size={18} />
-                                </button>
                                 <button onClick={() => deleteGoal(goal.id)} className="text-[#8a8a7a] dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1">
                                   <Trash2 size={18} />
                                 </button>
@@ -2825,89 +2564,6 @@ export default function App() {
               </AnimatePresence>
             </motion.div>
           )}
-          {activeTab === 'community' && (
-            <motion.div 
-              key="community"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="max-w-4xl mx-auto space-y-8"
-            >
-              <div className="bg-white dark:bg-zinc-900 p-8 md:p-12 rounded-[2.5rem] shadow-sm border border-[#e5e5d5] dark:border-zinc-800 transition-colors">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
-                  <div>
-                    <h2 className="text-3xl md:text-4xl font-bold mb-3 text-[#5A5A40] dark:text-emerald-400">{t.communityTitle}</h2>
-                    <p className="text-[#8a8a7a] dark:text-zinc-500 font-sans max-w-xl leading-relaxed">{t.communityDesc}</p>
-                  </div>
-                  <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0 shadow-sm">
-                    <Users size={32} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <AnimatePresence mode="popLayout">
-                    {communityPosts.length === 0 ? (
-                      <div className="col-span-full py-20 text-center bg-gray-50 dark:bg-zinc-800/50 rounded-3xl border border-dashed border-[#e5e5d5] dark:border-zinc-800">
-                        <Users size={48} className="mx-auto mb-4 text-[#d5d5c5] dark:text-zinc-700" />
-                        <p className="text-[#8a8a7a] dark:text-zinc-500 font-sans">{t.noPosts}</p>
-                      </div>
-                    ) : (
-                      communityPosts.map((post) => (
-                        <motion.div 
-                          key={post.id}
-                          layout
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          className="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-[#e5e5d5] dark:border-zinc-800 flex flex-col transition-colors hover:border-indigo-200 dark:hover:border-indigo-800"
-                        >
-                          <div className="flex justify-between items-start mb-4">
-                            <div className={cn(
-                              "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                              post.type === 'milestone' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                            )}>
-                              {post.type === 'milestone' ? t.milestone : t.advice}
-                            </div>
-                            <span className="text-[10px] text-[#8a8a7a] dark:text-zinc-500 font-sans">
-                              {new Date(post.date).toLocaleDateString()}
-                            </span>
-                          </div>
-                          
-                          <h3 className="text-lg font-bold mb-3 text-[#3a3a2e] dark:text-zinc-200">{post.title}</h3>
-                          <div className="prose prose-stone dark:prose-invert prose-sm max-w-none text-sm text-[#5a5a4a] dark:text-zinc-400 mb-6 flex-1 italic">
-                            <ReactMarkdown>{post.content}</ReactMarkdown>
-                          </div>
-
-                          <div className="flex items-center justify-between pt-4 border-t border-[#f5f5f0] dark:border-zinc-800 transition-colors">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 bg-gradient-to-br from-[#5A5A40] to-[#7a7a5a] rounded-full flex items-center justify-center text-white text-xs font-bold">
-                                {post.author.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="text-xs font-medium text-[#5A5A40] dark:text-emerald-400">{post.author}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <button 
-                                onClick={() => likePost(post.id)}
-                                className="flex items-center gap-1.5 text-[#8a8a7a] dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors group"
-                              >
-                                <Heart size={16} className={cn("transition-transform group-active:scale-125", post.likes > 0 && "fill-red-500 text-red-500")} />
-                                <span className="text-xs font-bold">{post.likes}</span>
-                              </button>
-                              <button 
-                                onClick={() => handleShare(post.title, post.content)}
-                                className="text-[#8a8a7a] dark:text-zinc-500 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
-                              >
-                                <Share2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
       </main>
 
@@ -2974,9 +2630,6 @@ export default function App() {
         </button>
         <button onClick={() => setActiveTab('journal')} className={cn("flex flex-col items-center p-2 rounded-2xl transition-all", activeTab === 'journal' ? "text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/20 ring-2 ring-emerald-700 dark:ring-emerald-500" : "text-[#8a8a7a] dark:text-zinc-500")}>
           <BookOpen size={24} />
-        </button>
-        <button onClick={() => setActiveTab('community')} className={cn("flex flex-col items-center p-2 rounded-2xl transition-all", activeTab === 'community' ? "text-indigo-700 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/20 ring-2 ring-indigo-700 dark:ring-indigo-500" : "text-[#8a8a7a] dark:text-zinc-500")}>
-          <Users size={24} />
         </button>
         <button onClick={() => setActiveTab('calendar')} className={cn("flex flex-col items-center p-2 rounded-2xl transition-all", activeTab === 'calendar' ? "text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/20 ring-2 ring-amber-700 dark:ring-amber-500" : "text-[#8a8a7a] dark:text-zinc-500")}>
           <CalendarIcon size={24} />

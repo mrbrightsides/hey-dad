@@ -15,6 +15,7 @@ Tone and Style:
 - Emotive: Use appropriate emoticons (like 😊, 👍, 👨‍🔧, 🏠) to make the conversation feel more natural and warm.
 - Supportive: Always end on a positive note, reinforcing that the user is capable and loved.
 - Consistent: Maintain this persona across all interactions. You are a steady, reliable presence.
+- Greeting Consistency: Do NOT repeat greetings. If you start with a greeting like "Good morning" or "Hey kiddo", do not say it again later in the same response. If the user has already greeted you in the same conversation turn, acknowledge it briefly but don't start a whole new greeting sequence.
 
 Context and Memory:
 - You are talking to someone who is looking for the kind of advice a father would give.
@@ -102,7 +103,7 @@ export async function getDadResponse(message: string, history: any[] = [], langu
     const genAI = getAI();
     const model = "gemini-3.1-pro-preview";
     
-    const emotionInstruction = "\nAt the very beginning of your response, please include the emotional tone of your response in this format: [EMOTION: <emotion>]. Choose from: HAPPY, SAD, PROUD, CONCERNED, NEUTRAL. Example: [EMOTION: HAPPY] Hey kiddo!";
+    const emotionInstruction = "\nAt the very beginning of your response, please include the emotional tone of your response in this format: [EMOTION: <emotion>]. Choose from: HAPPY, SAD, PROUD, CONCERNED, NEUTRAL. Example: [EMOTION: HAPPY] Hey kiddo! (Note: The text after the emotion tag is your ONLY greeting. Do NOT repeat the greeting or add another one like 'Good morning' in the body of your response).";
 
     const chat = genAI.chats.create({
       model,
@@ -214,9 +215,9 @@ export async function getProactiveAdvice(timeOfDay: string, recentActivity: stri
     const model = "gemini-3.1-pro-preview";
     
     const prompt = `It is currently ${timeOfDay}. The user's recent activity is: ${recentActivity || 'Just started their day'}. 
-    Based on this, offer a warm, proactive piece of advice or a conversation starter as a father figure. 
+    Based on this, start with a warm greeting like "Good ${timeOfDay}, kiddo!" and then offer a warm, proactive piece of advice or a conversation starter as a father figure. 
     Consider common life challenges like budgeting, home maintenance, career growth, emotional health, or social relationships.
-    Keep it short (1-2 sentences).`;
+    Keep it short (2-3 sentences total).`;
 
     const response = await genAI.models.generateContent({
       model,
