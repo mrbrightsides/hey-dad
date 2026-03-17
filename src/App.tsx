@@ -2810,41 +2810,6 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="pt-8 border-t border-[#e5e5d5] dark:border-zinc-800 transition-colors">
-                      <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 p-6 rounded-3xl transition-colors">
-                        <div className="flex items-center gap-3 mb-4 text-orange-700 dark:text-orange-400">
-                          <Settings size={24} />
-                          <h3 className="text-xl font-bold">{t.resetData}</h3>
-                        </div>
-                        <p className="text-sm text-orange-800 dark:text-orange-300 mb-6 leading-relaxed">{t.resetConfirm}</p>
-                        <div className="flex flex-wrap gap-4">
-                          <button 
-                            onClick={resetAllData}
-                            className="bg-orange-600 text-white px-8 py-3 rounded-xl font-sans font-bold shadow-md hover:bg-orange-700 transition-all flex items-center gap-2"
-                          >
-                            <Trash2 size={18} />
-                            {t.resetData}
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setOnboardingStep(0);
-                              setShowOnboarding(true);
-                            }}
-                            className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-sans font-bold shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2"
-                          >
-                            <Info size={18} />
-                            {t.showTutorial || "Show Tutorial"}
-                          </button>
-                          <button 
-                            onClick={() => setShowPrivacyPolicy(true)}
-                            className="bg-zinc-600 text-white px-8 py-3 rounded-xl font-sans font-bold shadow-md hover:bg-zinc-700 transition-all flex items-center gap-2"
-                          >
-                            <Shield size={18} />
-                            {t.privacyPolicyTitle}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
                   </motion.div>
                 )}
 
@@ -2936,6 +2901,42 @@ export default function App() {
                           <div className="text-[10px] text-[#8a8a7a] dark:text-zinc-500">Download your conversations as a text file</div>
                         </div>
                       </button>
+                    </div>
+
+                    <div className="pt-6 border-t border-[#e5e5d5] dark:border-zinc-800 space-y-6">
+                      <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 p-6 rounded-3xl transition-colors">
+                        <div className="flex items-center gap-3 mb-4 text-orange-700 dark:text-orange-400">
+                          <Settings size={24} />
+                          <h3 className="text-xl font-bold">{t.resetData}</h3>
+                        </div>
+                        <p className="text-sm text-orange-800 dark:text-orange-300 mb-6 leading-relaxed">{t.resetConfirm}</p>
+                        <div className="flex flex-wrap gap-4">
+                          <button 
+                            onClick={resetAllData}
+                            className="bg-orange-600 text-white px-8 py-3 rounded-xl font-sans font-bold shadow-md hover:bg-orange-700 transition-all flex items-center gap-2"
+                          >
+                            <Trash2 size={18} />
+                            {t.resetData}
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setOnboardingStep(0);
+                              setShowOnboarding(true);
+                            }}
+                            className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-sans font-bold shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2"
+                          >
+                            <Info size={18} />
+                            {t.showTutorial || "Show Tutorial"}
+                          </button>
+                          <button 
+                            onClick={() => setShowPrivacyPolicy(true)}
+                            className="bg-zinc-600 text-white px-8 py-3 rounded-xl font-sans font-bold shadow-md hover:bg-zinc-700 transition-all flex items-center gap-2"
+                          >
+                            <Shield size={18} />
+                            {t.privacyPolicyTitle}
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <button 
