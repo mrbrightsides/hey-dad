@@ -398,6 +398,11 @@ const TRANSLATIONS = {
     notificationEventBody: "Hey kiddo, you have an event: {title} coming up soon!",
     notificationJournalTitle: "Time for a Journal Entry?",
     notificationJournalBody: "It's been a while since your last entry. Want to share something with Dad?",
+    feedbackTitle: "Feedback for Dad",
+    feedbackPlaceholder: "How can Dad improve? Or just say thanks!",
+    sendFeedback: "Send Feedback via Email",
+    feedbackRatingHelpful: "Helpful",
+    feedbackRatingNotHelpful: "Not Helpful",
   },
   id: {
     appName: "Halo Ayah",
@@ -555,6 +560,11 @@ const TRANSLATIONS = {
     notificationEventBody: "Halo nak, kamu punya acara: {title} yang akan segera datang!",
     notificationJournalTitle: "Waktunya Menulis Jurnal?",
     notificationJournalBody: "Sudah lama sejak entri terakhirmu. Ingin berbagi sesuatu dengan Ayah?",
+    feedbackTitle: "Umpan Balik untuk Ayah",
+    feedbackPlaceholder: "Bagaimana Ayah bisa berkembang? Atau sekadar ucapkan terima kasih!",
+    sendFeedback: "Kirim Umpan Balik via Email",
+    feedbackRatingHelpful: "Membantu",
+    feedbackRatingNotHelpful: "Tidak Membantu",
   }
 };
 
@@ -596,6 +606,11 @@ export default function App() {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [isFetchingJoke, setIsFetchingJoke] = useState(false);
   
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<Message | null>(null);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
+
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [newEvent, setNewEvent] = useState({ title: '', date: '', type: 'event' });
   
@@ -1427,12 +1442,32 @@ export default function App() {
 
   const handleRating = (messageId: string, rating: number, content: string) => {
     setMessages(prev => prev.map(m => m.id === messageId ? { ...m, rating } : m));
+    setFeedbackMessage({ id: messageId, content, role: 'model' });
+    setShowFeedbackModal(true);
+    setFeedbackRating(rating);
+  };
+
+  const submitFeedback = () => {
+    if (!feedbackMessage) return;
+
+    const ratingText = feedbackRating === 1 ? t.feedbackRatingHelpful : t.feedbackRatingNotHelpful;
+    const subject = `Dad App Feedback: ${ratingText}`;
+    const body = `Message ID: ${feedbackMessage.id}
+Dad's Response: "${feedbackMessage.content.substring(0, 100)}..."
+Rating: ${ratingText}
+
+User Feedback:
+${feedbackText}
+
+---
+Sent from Dad App`;
+
+    window.location.href = `mailto:khudri@binadarma.ac.id?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     
-    // Open mailto for feedback
-    const ratingText = rating === 1 ? "Helpful" : "Not Helpful";
-    const subject = encodeURIComponent(`Feedback for Dad's Response - ${ratingText}`);
-    const body = encodeURIComponent(`Message ID: ${messageId}\nDad's Response: ${content}\nFeedback: ${ratingText}\n\nSuggestions for improvement:`);
-    window.location.href = `mailto:khudri@binadarma.ac.id?subject=${subject}&body=${body}`;
+    setShowFeedbackModal(false);
+    setFeedbackText('');
+    setFeedbackMessage(null);
+    setFeedbackRating(null);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3048,6 +3083,71 @@ export default function App() {
         </div>
         <p className="text-[#8a8a7a] text-[10px] md:text-xs font-sans uppercase tracking-widest">{t.footerBuild}</p>
       </footer>
+
+      {/* Feedback Modal */}
+      <AnimatePresence>
+        {showFeedbackModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden transition-colors border border-[#e5e5d5] dark:border-zinc-800"
+            >
+              <div className="p-6 border-b border-[#e5e5d5] dark:border-zinc-800 flex items-center justify-between bg-gradient-to-r from-[#5A5A40] to-[#7a7a5a] dark:from-emerald-700 dark:to-emerald-900 text-white">
+                <div className="flex items-center gap-3">
+                  <MessageCircle size={24} />
+                  <h2 className="text-xl font-bold">{t.feedbackTitle}</h2>
+                </div>
+                <button onClick={() => setShowFeedbackModal(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-center gap-4">
+                  <div className={cn(
+                    "p-4 rounded-2xl flex flex-col items-center gap-2 transition-all",
+                    feedbackRating === 1 ? "bg-emerald-100 dark:bg-emerald-900/40 ring-2 ring-emerald-500" : "bg-gray-50 dark:bg-zinc-800 opacity-50"
+                  )}>
+                    <ThumbsUp size={32} className="text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">{t.feedbackRatingHelpful}</span>
+                  </div>
+                  <div className={cn(
+                    "p-4 rounded-2xl flex flex-col items-center gap-2 transition-all",
+                    feedbackRating === -1 ? "bg-red-100 dark:bg-red-900/40 ring-2 ring-red-500" : "bg-gray-50 dark:bg-zinc-800 opacity-50"
+                  )}>
+                    <ThumbsDown size={32} className="text-red-600 dark:text-red-400" />
+                    <span className="text-xs font-bold text-red-700 dark:text-red-300 uppercase tracking-wider">{t.feedbackRatingNotHelpful}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold text-[#8a8a7a] dark:text-zinc-500 block">{t.feedbackPlaceholder}</label>
+                  <textarea 
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder={t.feedbackPlaceholder}
+                    className="w-full bg-gray-50 dark:bg-zinc-800 border-none focus:ring-2 focus:ring-[#5A5A40] dark:focus:ring-emerald-500 rounded-2xl px-4 py-3 font-sans text-sm min-h-[120px] text-[#3a3a2e] dark:text-zinc-100 placeholder-[#8a8a7a] dark:placeholder-zinc-600"
+                  />
+                </div>
+
+                <button 
+                  onClick={submitFeedback}
+                  className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+                >
+                  <Mail size={20} />
+                  {t.sendFeedback}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Emotional Check-in Modal */}
       <AnimatePresence>
