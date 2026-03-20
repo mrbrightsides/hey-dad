@@ -1,12 +1,79 @@
 
-interface Message {
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  orderBy, 
+  onSnapshot,
+  getDocFromServer
+} from 'firebase/firestore';
+import { db, auth } from '../firebase';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+export interface Message {
   role: 'user' | 'model';
   content: string;
   id: string;
   rating?: number;
+  timestamp: number;
 }
 
-interface GoalStep {
+export interface GoalStep {
   id: number;
   goal_id: number;
   content: string;
@@ -14,7 +81,7 @@ interface GoalStep {
   order_index: number;
 }
 
-interface Goal {
+export interface Goal {
   id: number;
   title: string;
   description: string;
@@ -23,7 +90,7 @@ interface Goal {
   steps: GoalStep[];
 }
 
-interface JournalEntry {
+export interface JournalEntry {
   id: number;
   title: string;
   content: string;
@@ -31,35 +98,35 @@ interface JournalEntry {
   category: string;
 }
 
-interface Skill {
+export interface Skill {
   id: number;
   name: string;
   description: string;
   completed: number;
 }
 
-interface EmergencyContact {
+export interface EmergencyContact {
   id: number;
   name: string;
   phone: string;
   relationship: string;
 }
 
-interface CalendarEvent {
+export interface CalendarEvent {
   id: number;
   title: string;
   date: string;
   type: string;
 }
 
-interface Memory {
+export interface Memory {
   id: number;
   content: string;
   source: string;
   date: string;
 }
 
-interface UserProfile {
+export interface UserProfile {
   preferredName?: string;
   interests: string;
   goals: string;
@@ -72,32 +139,18 @@ interface UserProfile {
   favorite_jokes?: string;
 }
 
-interface EmotionalCheckin {
+export interface EmotionalCheckin {
   id: number;
   date: string;
   feeling: string;
   notes: string;
 }
 
-interface EngagementStats {
+export interface EngagementStats {
   engagement: { feature: string; count: number }[];
   masteredSkills: number;
   totalSkills: number;
 }
-
-const STORAGE_KEYS = {
-  CHAT: 'dad_chat_history',
-  SKILLS: 'dad_skills',
-  JOURNAL: 'dad_journal',
-  GOALS: 'dad_goals',
-  EMERGENCY: 'dad_emergency_contacts',
-  CALENDAR: 'dad_calendar_events',
-  MEMORIES: 'dad_memories',
-  PROFILE: 'dad_user_profile',
-  CHECKINS: 'dad_emotional_checkins',
-  STATS: 'dad_engagement_stats',
-  JOKES: 'dad_daily_jokes'
-};
 
 const INITIAL_SKILLS: Skill[] = [
   { id: 1, name: "Tie a Tie", description: "Learn the Four-in-Hand knot for any formal occasion.", completed: 0 },
@@ -110,58 +163,123 @@ const INITIAL_SKILLS: Skill[] = [
   { id: 8, name: "Basic Home Repair", description: "Fixing a leaky faucet or a squeaky door like a pro.", completed: 0 }
 ];
 
-const get = <T>(key: string, defaultValue: T): T => {
-  const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : defaultValue;
-};
-
-const set = <T>(key: string, value: T): void => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
-
 export const storage = {
-  // Chat
-  getChatHistory: () => get<Message[]>(STORAGE_KEYS.CHAT, []),
-  saveChatMessage: (role: 'user' | 'model', content: string) => {
-    const history = storage.getChatHistory();
-    const newMessage: Message = { role, content, id: Date.now().toString() };
-    set(STORAGE_KEYS.CHAT, [...history, newMessage]);
-    return newMessage;
+  testConnection: async () => {
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+    } catch (error) {
+      if(error instanceof Error && error.message.includes('the client is offline')) {
+        console.error("Please check your Firebase configuration. ");
+      }
+    }
   },
-  deleteChatMessage: (id: string) => {
-    const history = storage.getChatHistory();
-    set(STORAGE_KEYS.CHAT, history.filter(m => m.id !== id));
+
+  // Chat
+  subscribeChatHistory: (callback: (messages: Message[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/chatHistory`;
+    const q = query(collection(db, path), orderBy('timestamp', 'asc'));
+    return onSnapshot(q, (snapshot) => {
+      callback(snapshot.docs.map(doc => doc.data() as Message));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
+  },
+  saveChatMessage: async (role: 'user' | 'model', content: string) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/chatHistory`;
+    const id = Date.now().toString();
+    const newMessage: Message = { role, content, id, timestamp: Date.now() };
+    try {
+      await setDoc(doc(db, path, id), newMessage);
+      return newMessage;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+  updateMessageRating: async (id: string, rating: number) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/chatHistory`;
+    try {
+      await updateDoc(doc(db, path, id), { rating });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  },
+  deleteChatMessage: async (id: string) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/chatHistory`;
+    try {
+      await deleteDoc(doc(db, path, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
   },
 
   // Skills
-  getSkills: () => get<Skill[]>(STORAGE_KEYS.SKILLS, INITIAL_SKILLS),
-  completeSkill: (id: number) => {
-    const skills = storage.getSkills();
-    set(STORAGE_KEYS.SKILLS, skills.map(s => s.id === id ? { ...s, completed: 1 } : s));
+  subscribeSkills: (callback: (skills: Skill[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/skills`;
+    return onSnapshot(collection(db, path), async (snapshot) => {
+      if (snapshot.empty) {
+        // Initialize skills if empty
+        for (const skill of INITIAL_SKILLS) {
+          await setDoc(doc(db, path, skill.id.toString()), skill);
+        }
+      } else {
+        callback(snapshot.docs.map(doc => doc.data() as Skill).sort((a, b) => a.id - b.id));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
   },
-  getSkillOfTheWeek: () => {
-    const skills = storage.getSkills();
-    const today = new Date();
-    const firstDayOfYear = new Date(today.getFullYear(), 0, 1);
-    const pastDaysOfYear = (today.getTime() - firstDayOfYear.getTime()) / 86400000;
-    const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
-    const skillIndex = weekNum % skills.length;
-    return { skill: skills[skillIndex], weekNum };
+  completeSkill: async (id: number) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/skills`;
+    try {
+      await updateDoc(doc(db, path, id.toString()), { completed: 1 });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
   },
 
   // Journal
-  getJournal: () => get<JournalEntry[]>(STORAGE_KEYS.JOURNAL, []),
-  addJournalEntry: (entry: Omit<JournalEntry, 'id'>) => {
-    const journal = storage.getJournal();
-    const newEntry = { ...entry, id: Date.now() };
-    set(STORAGE_KEYS.JOURNAL, [newEntry, ...journal]);
-    return newEntry;
+  subscribeJournal: (callback: (entries: JournalEntry[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/journal`;
+    const q = query(collection(db, path), orderBy('id', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      callback(snapshot.docs.map(doc => doc.data() as JournalEntry));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
+  },
+  addJournalEntry: async (entry: Omit<JournalEntry, 'id'>) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/journal`;
+    const id = Date.now();
+    const newEntry = { ...entry, id };
+    try {
+      await setDoc(doc(db, path, id.toString()), newEntry);
+      return newEntry;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
   },
 
   // Goals
-  getGoals: () => get<Goal[]>(STORAGE_KEYS.GOALS, []),
-  addGoal: (title: string, description: string, stepContents: string[]) => {
-    const goals = storage.getGoals();
+  subscribeGoals: (callback: (goals: Goal[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/goals`;
+    return onSnapshot(collection(db, path), (snapshot) => {
+      callback(snapshot.docs.map(doc => doc.data() as Goal));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
+  },
+  addGoal: async (title: string, description: string, stepContents: string[]) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/goals`;
     const goalId = Date.now();
     const newGoal: Goal = {
       id: goalId,
@@ -177,115 +295,274 @@ export const storage = {
         order_index: index
       }))
     };
-    set(STORAGE_KEYS.GOALS, [...goals, newGoal]);
-    return newGoal;
+    try {
+      await setDoc(doc(db, path, goalId.toString()), newGoal);
+      return newGoal;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
   },
-  toggleGoalStep: (stepId: number, completed: boolean) => {
-    const goals = storage.getGoals();
-    const updatedGoals = goals.map(g => ({
-      ...g,
-      steps: g.steps.map(s => s.id === stepId ? { ...s, completed: completed ? 1 : 0 } : s)
-    }));
-    set(STORAGE_KEYS.GOALS, updatedGoals);
+  toggleGoalStep: async (goalId: number, stepId: number, completed: boolean) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/goals`;
+    try {
+      const goalRef = doc(db, path, goalId.toString());
+      const goalSnap = await getDoc(goalRef);
+      if (goalSnap.exists()) {
+        const goal = goalSnap.data() as Goal;
+        const updatedSteps = goal.steps.map(s => s.id === stepId ? { ...s, completed: completed ? 1 : 0 } : s);
+        await updateDoc(goalRef, { steps: updatedSteps });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
   },
-  deleteGoal: (id: number) => {
-    const goals = storage.getGoals();
-    set(STORAGE_KEYS.GOALS, goals.filter(g => g.id !== id));
+  updateGoal: async (goal: Goal) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/goals`;
+    try {
+      await setDoc(doc(db, path, goal.id.toString()), goal);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  },
+  deleteGoal: async (id: number) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/goals`;
+    try {
+      await deleteDoc(doc(db, path, id.toString()));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
   },
 
   // Emergency Contacts
-  getEmergencyContacts: () => get<EmergencyContact[]>(STORAGE_KEYS.EMERGENCY, []),
-  addEmergencyContact: (contact: Omit<EmergencyContact, 'id'>) => {
-    const contacts = storage.getEmergencyContacts();
-    const newContact = { ...contact, id: Date.now() };
-    set(STORAGE_KEYS.EMERGENCY, [...contacts, newContact]);
-    return newContact;
+  subscribeEmergencyContacts: (callback: (contacts: EmergencyContact[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/emergencyContacts`;
+    return onSnapshot(collection(db, path), (snapshot) => {
+      callback(snapshot.docs.map(doc => doc.data() as EmergencyContact));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
   },
-  deleteEmergencyContact: (id: number) => {
-    const contacts = storage.getEmergencyContacts();
-    set(STORAGE_KEYS.EMERGENCY, contacts.filter(c => c.id !== id));
+  addEmergencyContact: async (contact: Omit<EmergencyContact, 'id'>) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/emergencyContacts`;
+    const id = Date.now();
+    const newContact = { ...contact, id };
+    try {
+      await setDoc(doc(db, path, id.toString()), newContact);
+      return newContact;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+  deleteEmergencyContact: async (id: number) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/emergencyContacts`;
+    try {
+      await deleteDoc(doc(db, path, id.toString()));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
   },
 
   // Calendar
-  getCalendarEvents: () => get<CalendarEvent[]>(STORAGE_KEYS.CALENDAR, []),
-  addCalendarEvent: (event: Omit<CalendarEvent, 'id'>) => {
-    const events = storage.getCalendarEvents();
-    const newEvent = { ...event, id: Date.now() };
-    set(STORAGE_KEYS.CALENDAR, [...events, newEvent]);
-    return newEvent;
+  subscribeCalendarEvents: (callback: (events: CalendarEvent[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/calendarEvents`;
+    return onSnapshot(collection(db, path), (snapshot) => {
+      callback(snapshot.docs.map(doc => doc.data() as CalendarEvent));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
   },
-  deleteCalendarEvent: (id: number) => {
-    const events = storage.getCalendarEvents();
-    set(STORAGE_KEYS.CALENDAR, events.filter(e => e.id !== id));
+  addCalendarEvent: async (event: Omit<CalendarEvent, 'id'>) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/calendarEvents`;
+    const id = Date.now();
+    const newEvent = { ...event, id };
+    try {
+      await setDoc(doc(db, path, id.toString()), newEvent);
+      return newEvent;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+  deleteCalendarEvent: async (id: number) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/calendarEvents`;
+    try {
+      await deleteDoc(doc(db, path, id.toString()));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
   },
 
   // Memories
-  getMemories: () => get<Memory[]>(STORAGE_KEYS.MEMORIES, []),
-  addMemory: (content: string, source: string) => {
-    const memories = storage.getMemories();
-    const newMemory = { id: Date.now(), content, source, date: new Date().toISOString() };
-    set(STORAGE_KEYS.MEMORIES, [newMemory, ...memories]);
-    return newMemory;
+  subscribeMemories: (callback: (memories: Memory[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/memories`;
+    const q = query(collection(db, path), orderBy('id', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      callback(snapshot.docs.map(doc => doc.data() as Memory));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
   },
-  deleteMemory: (id: number) => {
-    const memories = storage.getMemories();
-    set(STORAGE_KEYS.MEMORIES, memories.filter(m => m.id !== id));
+  addMemory: async (content: string, source: string) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/memories`;
+    const id = Date.now();
+    const newMemory = { id, content, source, date: new Date().toISOString() };
+    try {
+      await setDoc(doc(db, path, id.toString()), newMemory);
+      return newMemory;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+  deleteMemory: async (id: number) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/memories`;
+    try {
+      await deleteDoc(doc(db, path, id.toString()));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
   },
 
   // Profile
-  getProfile: () => get<UserProfile>(STORAGE_KEYS.PROFILE, { 
-    preferredName: '',
-    interests: '', 
-    goals: '', 
-    challenges: '', 
-    personality: 'wise elder', 
-    has_onboarded: 0,
-    notifications_enabled: 0,
-    notify_calendar: 1,
-    notify_journal: 1,
-    favorite_jokes: ''
-  }),
-  updateProfile: (profile: UserProfile) => set(STORAGE_KEYS.PROFILE, profile),
+  subscribeProfile: (callback: (profile: UserProfile) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}`;
+    return onSnapshot(doc(db, path), (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data() as UserProfile);
+      } else {
+        // Default profile
+        callback({ 
+          preferredName: '',
+          interests: '', 
+          goals: '', 
+          challenges: '', 
+          personality: 'wise elder', 
+          has_onboarded: 0,
+          notifications_enabled: 0,
+          notify_calendar: 1,
+          notify_journal: 1,
+          favorite_jokes: ''
+        });
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
+  },
+  updateProfile: async (profile: UserProfile) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}`;
+    try {
+      await setDoc(doc(db, path), profile, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
 
   // Checkins
-  getCheckins: () => get<EmotionalCheckin[]>(STORAGE_KEYS.CHECKINS, []),
-  addCheckin: (checkin: { feeling: string; notes: string }) => {
-    const checkins = storage.getCheckins();
-    const newCheckin = { id: Date.now(), ...checkin, date: new Date().toISOString() };
-    set(STORAGE_KEYS.CHECKINS, [newCheckin, ...checkins]);
-    return newCheckin;
+  subscribeCheckins: (callback: (checkins: EmotionalCheckin[]) => void) => {
+    if (!auth.currentUser) return () => {};
+    const path = `users/${auth.currentUser.uid}/checkins`;
+    const q = query(collection(db, path), orderBy('id', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      callback(snapshot.docs.map(doc => doc.data() as EmotionalCheckin));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
   },
-
-  // Stats
-  getStats: () => {
-    const stats = get<EngagementStats>(STORAGE_KEYS.STATS, { engagement: [], masteredSkills: 0, totalSkills: INITIAL_SKILLS.length });
-    const skills = storage.getSkills();
-    stats.masteredSkills = skills.filter(s => s.completed).length;
-    stats.totalSkills = skills.length;
-    return stats;
-  },
-  logEngagement: (feature: string) => {
-    const stats = storage.getStats();
-    const existing = stats.engagement.find(e => e.feature === feature);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      stats.engagement.push({ feature, count: 1 });
+  addCheckin: async (checkin: { feeling: string; notes: string }) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/checkins`;
+    const id = Date.now();
+    const newCheckin = { id, ...checkin, date: new Date().toISOString() };
+    try {
+      await setDoc(doc(db, path, id.toString()), newCheckin);
+      return newCheckin;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
     }
-    set(STORAGE_KEYS.STATS, stats);
   },
 
-  // Jokes
-  getDailyJoke: async () => {
-    const jokes = get<{ joke: string, date: string }[]>(STORAGE_KEYS.JOKES, []);
-    const today = new Date().toISOString().split('T')[0];
-    const existing = jokes.find(j => j.date === today);
-    if (existing) return existing.joke;
-    return null; // App will fetch from Gemini if null
+  // Stats (Derived from other collections)
+  getStats: (skills: Skill[]) => {
+    return {
+      engagement: [], // Could be implemented with a separate collection if needed
+      masteredSkills: skills.filter(s => s.completed).length,
+      totalSkills: skills.length
+    };
   },
-  saveDailyJoke: (joke: string) => {
-    const jokes = get<{ joke: string, date: string }[]>(STORAGE_KEYS.JOKES, []);
-    const today = new Date().toISOString().split('T')[0];
-    set(STORAGE_KEYS.JOKES, [...jokes.filter(j => j.date === today), { joke, date: today }]);
+
+  getSkillOfTheWeek: (skills: Skill[]) => {
+    if (skills.length === 0) return null;
+    const weekNumber = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
+    return skills[weekNumber % skills.length];
+  },
+
+  getDailyJoke: async () => {
+    if (!auth.currentUser) return null;
+    const path = `users/${auth.currentUser.uid}`;
+    const snap = await getDoc(doc(db, path));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.daily_joke_date === new Date().toISOString().split('T')[0]) {
+        return data.daily_joke;
+      }
+    }
+    return null;
+  },
+
+  saveDailyJoke: async (joke: string) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}`;
+    try {
+      await setDoc(doc(db, path), {
+        daily_joke: joke,
+        daily_joke_date: new Date().toISOString().split('T')[0]
+      }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+
+  logEngagement: async (feature: string) => {
+    if (!auth.currentUser) return;
+    const path = `users/${auth.currentUser.uid}/engagement`;
+    const id = feature;
+    const docRef = doc(db, path, id);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      await updateDoc(docRef, { count: (snap.data().count || 0) + 1 });
+    } else {
+      await setDoc(docRef, { feature, count: 1 });
+    }
+  },
+
+  // Reset
+  resetAllData: async () => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const collections = [
+      'chatHistory', 'skills', 'journal', 'goals', 
+      'emergencyContacts', 'calendarEvents', 'memories', 'checkins'
+    ];
+    
+    for (const col of collections) {
+      const path = `users/${uid}/${col}`;
+      const snap = await getDocs(collection(db, path));
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, path, d.id));
+      }
+    }
+    await deleteDoc(doc(db, 'users', uid));
   }
 };

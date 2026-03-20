@@ -54,7 +54,9 @@ import {
   Users,
   Download,
   Bell,
-  BellOff
+  BellOff,
+  LogIn,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -89,9 +91,104 @@ import {
 } from './services/gemini';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { auth, googleProvider, isFirebaseConfigured } from './firebase';
+import { signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function FirebaseSetupScreen() {
+  return (
+    <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-stone-200">
+        <div className="flex justify-center mb-6">
+          <div className="p-3 bg-amber-100 rounded-full">
+            <Settings className="w-8 h-8 text-amber-600 animate-spin-slow" />
+          </div>
+        </div>
+        <h2 className="text-2xl font-bold text-stone-900 text-center mb-4">
+          Firebase Configuration Required
+        </h2>
+        <p className="text-stone-600 text-center mb-8">
+          To enable authentication and data storage, you need to add your Firebase configuration to the AI Studio Secrets.
+        </p>
+        
+        <div className="space-y-4">
+          <div className="p-4 bg-stone-50 rounded-xl border border-stone-100">
+            <h3 className="font-semibold text-stone-800 mb-2 flex items-center gap-2">
+              <span className="w-6 h-6 bg-stone-200 rounded-full flex items-center justify-center text-xs">1</span>
+              Get your Config
+            </h3>
+            <p className="text-sm text-stone-500">
+              Go to your Firebase Project Settings and copy the configuration object.
+            </p>
+          </div>
+          
+          <div className="p-4 bg-stone-50 rounded-xl border border-stone-100">
+            <h3 className="font-semibold text-stone-800 mb-2 flex items-center gap-2">
+              <span className="w-6 h-6 bg-stone-200 rounded-full flex items-center justify-center text-xs">2</span>
+              Add to Secrets
+            </h3>
+            <p className="text-sm text-stone-500">
+              Open <strong>Settings</strong> (⚙️) → <strong>Secrets</strong> and add the following keys:
+            </p>
+            <ul className="mt-2 space-y-1 text-xs font-mono text-stone-400">
+              <li>VITE_FIREBASE_API_KEY</li>
+              <li>VITE_FIREBASE_AUTH_DOMAIN</li>
+              <li>VITE_FIREBASE_PROJECT_ID</li>
+              <li>VITE_FIREBASE_STORAGE_BUCKET</li>
+              <li>VITE_FIREBASE_MESSAGING_SENDER_ID</li>
+              <li>VITE_FIREBASE_APP_ID</li>
+              <li>VITE_FIREBASE_FIRESTORE_DATABASE_ID</li>
+            </ul>
+          </div>
+        </div>
+        
+        <p className="mt-8 text-xs text-stone-400 text-center">
+          The app will automatically refresh once the secrets are added.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4 bg-red-50 dark:bg-red-950">
+          <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-xl max-w-md w-full border-2 border-red-500">
+            <h2 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h2>
+            <p className="text-gray-600 dark:text-zinc-400 mb-6">
+              {this.state.error?.message || "An unexpected error occurred."}
+            </p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors"
+            >
+              Reload App
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 interface Message {
@@ -403,6 +500,7 @@ const TRANSLATIONS = {
     sendFeedback: "Send Feedback via Email",
     feedbackRatingHelpful: "Helpful",
     feedbackRatingNotHelpful: "Not Helpful",
+    logout: "Log Out",
   },
   id: {
     appName: "Halo Ayah",
@@ -565,6 +663,7 @@ const TRANSLATIONS = {
     sendFeedback: "Kirim Umpan Balik via Email",
     feedbackRatingHelpful: "Membantu",
     feedbackRatingNotHelpful: "Tidak Membantu",
+    logout: "Keluar",
   }
 };
 
@@ -585,7 +684,13 @@ interface Memory {
 export default function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'toolbox' | 'journal' | 'calendar' | 'memoryBox' | 'profile'>('chat');
   const [language, setLanguage] = useState<'en' | 'id'>('en');
+  
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
+  const isGreetingInProgress = useRef(false);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -618,7 +723,18 @@ export default function App() {
   const [skillOfTheWeek, setSkillOfTheWeek] = useState<Skill | null>(null);
   const [isSavingMemory, setIsSavingMemory] = useState(false);
   
-  const [profile, setProfile] = useState<UserProfile>({ interests: '', goals: '', challenges: '', personality: 'wise elder', has_onboarded: 1 });
+  const [profile, setProfile] = useState<UserProfile>({ 
+    preferredName: '',
+    interests: '', 
+    goals: '', 
+    challenges: '', 
+    personality: 'wise elder', 
+    has_onboarded: 0,
+    notifications_enabled: 0,
+    notify_calendar: 1,
+    notify_journal: 1,
+    favorite_jokes: ''
+  });
   const [checkins, setCheckins] = useState<EmotionalCheckin[]>([]);
   const [stats, setStats] = useState<EngagementStats | null>(null);
   const [newCheckin, setNewCheckin] = useState({ feeling: 'Happy', notes: '' });
@@ -639,6 +755,77 @@ export default function App() {
     }
     return 'light';
   });
+
+  // Auth Listener
+  useEffect(() => {
+    if (!isFirebaseConfigured || !auth) {
+      setIsAuthReady(true);
+      return;
+    }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (!isFirebaseConfigured) {
+    return <FirebaseSetupScreen />;
+  }
+
+  // Firestore Subscriptions
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribes = [
+      storage.subscribeChatHistory((msgs) => {
+        setMessages(msgs);
+        setHasLoadedHistory(true);
+      }),
+      storage.subscribeSkills(setSkills),
+      storage.subscribeJournal(setJournal),
+      storage.subscribeGoals(setGoals),
+      storage.subscribeEmergencyContacts(setEmergencyContacts),
+      storage.subscribeCalendarEvents(setCalendarEvents),
+      storage.subscribeMemories(setMemories),
+      storage.subscribeCheckins(setCheckins),
+      storage.subscribeProfile(setProfile)
+    ];
+
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [user]);
+
+  useEffect(() => {
+    if (skills.length > 0) {
+      setStats(storage.getStats(skills));
+      setSkillOfTheWeek(storage.getSkillOfTheWeek(skills));
+    }
+  }, [skills]);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login failed", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      // Reset local state if needed
+      setMessages([]);
+      setSkills([]);
+      setJournal([]);
+      setGoals([]);
+      setEmergencyContacts([]);
+      setCalendarEvents([]);
+      setMemories([]);
+      setCheckins([]);
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
 
   useEffect(() => {
     const root = document.documentElement;
@@ -718,7 +905,7 @@ export default function App() {
   };
 
   const handleExportChat = () => {
-    const history = storage.getChatHistory();
+    const history = messages;
     if (history.length === 0) return;
 
     const content = history.map(m => {
@@ -805,7 +992,6 @@ export default function App() {
     fetchSkills();
     fetchJournal();
     fetchGoals();
-    fetchChatHistory();
     fetchEmergencyContacts();
     fetchCalendarEvents();
     fetchMemories();
@@ -813,8 +999,14 @@ export default function App() {
     fetchProfile();
     fetchCheckins();
     fetchStats();
-    handleProactiveGreeting();
   }, []);
+
+  // Proactive Greeting Effect
+  useEffect(() => {
+    if (isAuthReady && user && hasLoadedHistory && messages.length === 0) {
+      handleProactiveGreeting();
+    }
+  }, [isAuthReady, user, hasLoadedHistory, messages.length]);
 
   const handleShare = async (title: string, text: string) => {
     if (navigator.share) {
@@ -838,7 +1030,7 @@ export default function App() {
   };
 
   const fetchProfile = async () => {
-    const data = storage.getProfile();
+    const data = profile;
     setProfile(data);
     const hasSeenOnboardingLocal = localStorage.getItem('has_seen_onboarding');
     if (data.has_onboarded === 0 && !hasSeenOnboardingLocal) {
@@ -847,12 +1039,12 @@ export default function App() {
   };
 
   const fetchCheckins = async () => {
-    const data = storage.getCheckins();
+    const data = checkins;
     setCheckins(data);
   };
 
   const fetchStats = async () => {
-    const data = storage.getStats();
+    const data = storage.getStats(skills);
     setStats(data);
   };
 
@@ -939,13 +1131,13 @@ export default function App() {
   };
 
   const fetchMemories = async () => {
-    const data = storage.getMemories();
+    const data = memories;
     setMemories(data);
   };
 
   const fetchSkillOfTheWeek = async () => {
-    const data = storage.getSkillOfTheWeek();
-    setSkillOfTheWeek(data.skill);
+    const data = storage.getSkillOfTheWeek(skills);
+    setSkillOfTheWeek(data);
   };
 
   const checkAndIncrementQuota = async () => {
@@ -981,7 +1173,7 @@ export default function App() {
   };
 
   const fetchCalendarEvents = async () => {
-    const data = storage.getCalendarEvents();
+    const data = calendarEvents;
     setCalendarEvents(data);
   };
 
@@ -1000,6 +1192,7 @@ export default function App() {
 
   const resetAllData = async () => {
     if (!window.confirm(t.resetConfirm)) return;
+    await storage.resetAllData();
     localStorage.clear();
     alert(t.resetSuccess);
     window.location.reload();
@@ -1007,24 +1200,17 @@ export default function App() {
 
   const reorderSteps = async (goalId: number, newSteps: GoalStep[]) => {
     const updatedSteps = newSteps.map((s, i) => ({ ...s, order_index: i }));
-    // Update local state
-    setGoals(goals.map(g => g.id === goalId ? { ...g, steps: updatedSteps } : g));
-    
-    // Update storage
-    const goalsData = storage.getGoals();
-    const updatedGoals = goalsData.map(g => {
-      if (g.id === goalId) {
-        return { ...g, steps: updatedSteps };
-      }
-      return g;
-    });
-    localStorage.setItem('dad_goals', JSON.stringify(updatedGoals));
+    const goal = goals.find(g => g.id === goalId);
+    if (goal) {
+      storage.updateGoal({ ...goal, steps: updatedSteps });
+    }
   };
 
   const reorderGoals = async (newGoals: Goal[]) => {
     const updatedGoals = newGoals.map((g, i) => ({ ...g, order_index: i }));
-    setGoals(updatedGoals);
-    localStorage.setItem('dad_goals', JSON.stringify(updatedGoals));
+    for (const goal of updatedGoals) {
+      storage.updateGoal(goal);
+    }
   };
 
   const fetchDailyJoke = async () => {
@@ -1060,9 +1246,10 @@ export default function App() {
   };
 
   const handleProactiveGreeting = async () => {
-    // Check if we already have messages today
-    const history = storage.getChatHistory();
-    if (history.length > 0) return;
+    // Check if we already have messages or if a greeting is already in progress
+    if (messages.length > 0 || isGreetingInProgress.current) return;
+    
+    isGreetingInProgress.current = true;
 
     const now = new Date();
     const hour = now.getHours();
@@ -1130,17 +1317,12 @@ export default function App() {
   };
 
   const fetchChatHistory = async () => {
-    const data = storage.getChatHistory();
-    if (data.length === 0) {
-      setMessages([{ role: 'model', content: t.initialGreeting, id: 'initial' }]);
-    } else {
-      setMessages(data);
-    }
+    // This is now handled by the subscription and the proactive greeting effect
   };
 
   const saveChatMessage = async (role: 'user' | 'model', content: string) => {
-    const newMessage = storage.saveChatMessage(role, content);
-    return newMessage.id;
+    const newMessage = await storage.saveChatMessage(role, content);
+    return newMessage?.id;
   };
 
   const deleteChatMessage = async (id: string) => {
@@ -1150,12 +1332,12 @@ export default function App() {
   };
 
   const fetchSkills = async () => {
-    const data = storage.getSkills();
+    const data = skills;
     setSkills(data);
   };
 
   const fetchJournal = async () => {
-    const data = storage.getJournal();
+    const data = journal;
     setJournal(data);
   };
 
@@ -1168,12 +1350,12 @@ export default function App() {
   };
 
   const fetchGoals = async () => {
-    const data = storage.getGoals();
+    const data = goals;
     setGoals(data);
   };
 
   const fetchEmergencyContacts = async () => {
-    const data = storage.getEmergencyContacts();
+    const data = emergencyContacts;
     setEmergencyContacts(data);
   };
 
@@ -1584,8 +1766,8 @@ Sent from Dad App`;
     }
   };
 
-  const toggleStep = async (stepId: number, completed: boolean) => {
-    storage.toggleGoalStep(stepId, completed);
+  const toggleStep = async (goalId: number, stepId: number, completed: boolean) => {
+    storage.toggleGoalStep(goalId, stepId, completed);
     if (completed) playSound('success');
     fetchGoals();
   };
@@ -1596,7 +1778,45 @@ Sent from Dad App`;
   };
 
   return (
-    <div className="min-h-screen bg-[#fdfcf0] dark:bg-zinc-950 text-[#3a3a2e] dark:text-zinc-100 font-serif pb-20 md:pb-0 transition-colors duration-300 overflow-x-hidden">
+    <ErrorBoundary>
+      {!isAuthReady ? (
+        <div className="min-h-screen flex items-center justify-center bg-[#fdfcf0] dark:bg-zinc-950">
+          <div className="flex flex-col items-center gap-4">
+            <DadAvatar emotion="HAPPY" isThinking={true} />
+            <p className="text-[#5A5A40] dark:text-emerald-400 font-sans font-bold animate-pulse">
+              {language === 'en' ? "Dad is coming..." : "Ayah sedang datang..."}
+            </p>
+          </div>
+        </div>
+      ) : !user ? (
+        <div className="min-h-screen flex items-center justify-center bg-[#fdfcf0] dark:bg-zinc-950 p-4">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white dark:bg-zinc-900 p-8 md:p-12 rounded-[2.5rem] shadow-xl max-w-md w-full border border-[#e5e5d5] dark:border-zinc-800 text-center"
+          >
+            <div className="mb-8">
+              <DadAvatar emotion="HAPPY" />
+            </div>
+            <h1 className="text-3xl font-bold text-[#5A5A40] dark:text-emerald-400 mb-4 font-serif">
+              {t.appName}
+            </h1>
+            <p className="text-[#8a8a7a] dark:text-zinc-400 mb-8 font-sans leading-relaxed">
+              {language === 'en' 
+                ? "Welcome back, kid. Dad's been waiting for you. Sign in to continue our journey together."
+                : "Selamat datang kembali, nak. Ayah sudah menunggumu. Masuk untuk melanjutkan perjalanan kita bersama."}
+            </p>
+            <button 
+              onClick={handleLogin}
+              className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold font-sans flex items-center justify-center gap-3 hover:bg-[#4a4a30] dark:hover:bg-emerald-500 transition-all shadow-lg hover:shadow-emerald-500/20"
+            >
+              <LogIn size={20} />
+              {language === 'en' ? "Sign in with Google" : "Masuk dengan Google"}
+            </button>
+          </motion.div>
+        </div>
+      ) : (
+        <div className="min-h-screen bg-[#fdfcf0] dark:bg-zinc-950 text-[#3a3a2e] dark:text-zinc-100 font-serif pb-20 md:pb-0 transition-colors duration-300 overflow-x-hidden">
       {/* Header - Hidden on Mobile, shown on Desktop */}
       <header className="hidden md:block bg-white dark:bg-zinc-900 border-b border-[#e5e5d5] dark:border-zinc-800 py-6 px-4 sticky top-0 z-10 shadow-sm">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
@@ -1668,6 +1888,13 @@ Sent from Dad App`;
                 {t.profile}
               </button>
             </nav>
+            <button 
+              onClick={handleLogout}
+              className="p-2 text-[#5A5A40] dark:text-emerald-400 hover:bg-[#f5f5f0] dark:hover:bg-zinc-800 rounded-full transition-all"
+              title={language === 'en' ? "Logout" : "Keluar"}
+            >
+              <LogOut size={20} />
+            </button>
           </div>
         </div>
       </header>
@@ -2613,13 +2840,13 @@ Sent from Dad App`;
                                       <GripVertical size={16} />
                                     </div>
                                     <div 
-                                      onClick={() => toggleStep(step.id, !step.completed)}
+                                      onClick={() => toggleStep(goal.id, step.id, !step.completed)}
                                       className={cn("shrink-0 transition-colors", step.completed ? "text-emerald-500 dark:text-emerald-400" : "text-[#8a8a7a] dark:text-zinc-600 group-hover:text-indigo-500 dark:group-hover:text-indigo-400")}
                                     >
                                       {step.completed ? <CheckCircle size={20} /> : <Circle size={20} />}
                                     </div>
                                     <span 
-                                      onClick={() => toggleStep(step.id, !step.completed)}
+                                      onClick={() => toggleStep(goal.id, step.id, !step.completed)}
                                       className={cn("font-sans text-base transition-all flex-1", step.completed ? "line-through text-[#8a8a7a] dark:text-zinc-500 opacity-50" : "text-[#3a3a2e] dark:text-zinc-200")}
                                     >
                                       {step.content}
@@ -2974,13 +3201,23 @@ Sent from Dad App`;
                       </div>
                     </div>
 
-                    <button 
-                      onClick={updateProfile}
-                      className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-[#4a4a35] dark:hover:bg-emerald-500 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Save size={20} />
-                      {t.saveProfile}
-                    </button>
+                    <div className="flex flex-col gap-4">
+                      <button 
+                        onClick={updateProfile}
+                        className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-[#4a4a35] dark:hover:bg-emerald-500 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Save size={20} />
+                        {t.saveProfile}
+                      </button>
+
+                      <button 
+                        onClick={handleLogout}
+                        className="w-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 py-4 rounded-2xl font-bold border border-red-100 dark:border-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/40 transition-all flex items-center justify-center gap-2"
+                      >
+                        <LogOut size={20} />
+                        {t.logout || "Log Out"}
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -3562,6 +3799,8 @@ Sent from Dad App`;
           scrollbar-width: none;
         }
       `}} />
-    </div>
+        </div>
+      )}
+    </ErrorBoundary>
   );
 }

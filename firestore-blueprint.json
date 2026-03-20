@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "preferredName": { "type": "string" },
+        "interests": { "type": "string" },
+        "goals": { "type": "string" },
+        "challenges": { "type": "string" },
+        "personality": { "type": "string" },
+        "has_onboarded": { "type": "integer" },
+        "notifications_enabled": { "type": "integer" },
+        "notify_calendar": { "type": "integer" },
+        "notify_journal": { "type": "integer" },
+        "favorite_jokes": { "type": "string" }
+      }
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A chat message",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "content": { "type": "string" },
+        "id": { "type": "string" },
+        "rating": { "type": "integer" },
+        "timestamp": { "type": "integer" }
+      },
+      "required": ["role", "content", "id", "timestamp"]
+    },
+    "Goal": {
+      "title": "Goal",
+      "description": "A life goal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "goal_id": { "type": "integer" },
+              "content": { "type": "string" },
+              "completed": { "type": "integer" },
+              "order_index": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "required": ["id", "title", "status", "created_at"]
+    },
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "A journal entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "title", "content", "date"]
+    },
+    "Skill": {
+      "title": "Skill",
+      "description": "A life skill",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "completed": { "type": "integer" }
+      },
+      "required": ["id", "name", "completed"]
+    },
+    "EmergencyContact": {
+      "title": "EmergencyContact",
+      "description": "An emergency contact",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "relationship": { "type": "string" }
+      },
+      "required": ["id", "name", "phone"]
+    },
+    "CalendarEvent": {
+      "title": "CalendarEvent",
+      "description": "A calendar event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" }
+      },
+      "required": ["id", "title", "date"]
+    },
+    "Memory": {
+      "title": "Memory",
+      "description": "A saved memory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "content": { "type": "string" },
+        "source": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "content", "date"]
+    },
+    "EmotionalCheckin": {
+      "title": "EmotionalCheckin",
+      "description": "An emotional check-in",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "date": { "type": "string" },
+        "feeling": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "date", "feeling"]
+    },
+    "CommunityTip": {
+      "title": "CommunityTip",
+      "description": "A tip shared by the community",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string" },
+        "timestamp": { "type": "integer" },
+        "likes": { "type": "integer" }
+      },
+      "required": ["id", "authorId", "authorName", "content", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/communityTips/{tipId}": {
+      "schema": "CommunityTip",
+      "description": "Community shared tips"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile data"
+    },
+    "/users/{userId}/chatHistory/{messageId}": {
+      "schema": "Message",
+      "description": "Chat history"
+    },
+    "/users/{userId}/skills/{skillId}": {
+      "schema": "Skill",
+      "description": "User skills"
+    },
+    "/users/{userId}/journal/{entryId}": {
+      "schema": "JournalEntry",
+      "description": "Journal entries"
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": "Goal",
+      "description": "User goals"
+    },
+    "/users/{userId}/emergencyContacts/{contactId}": {
+      "schema": "EmergencyContact",
+      "description": "Emergency contacts"
+    },
+    "/users/{userId}/calendarEvents/{eventId}": {
+      "schema": "CalendarEvent",
+      "description": "Calendar events"
+    },
+    "/users/{userId}/memories/{memoryId}": {
+      "schema": "Memory",
+      "description": "Saved memories"
+    },
+    "/users/{userId}/checkins/{checkinId}": {
+      "schema": "EmotionalCheckin",
+      "description": "Emotional check-ins"
+    }
+  }
+}

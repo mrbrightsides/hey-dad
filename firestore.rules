@@ -1,0 +1,187 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "khudri@binadarma.ac.id" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUserProfile(data) {
+      return data.size() <= 20 && // Limit number of fields
+             (!('preferredName' in data) || (data.preferredName is string && data.preferredName.size() < 100)) &&
+             (!('interests' in data) || (data.interests is string && data.interests.size() < 1000)) &&
+             (!('goals' in data) || (data.goals is string && data.goals.size() < 1000)) &&
+             (!('challenges' in data) || (data.challenges is string && data.challenges.size() < 1000)) &&
+             (!('personality' in data) || (data.personality is string && data.personality.size() < 100)) &&
+             (!('has_onboarded' in data) || (data.has_onboarded is int)) &&
+             (!('notifications_enabled' in data) || (data.notifications_enabled is int)) &&
+             (!('notify_calendar' in data) || (data.notify_calendar is int)) &&
+             (!('notify_journal' in data) || (data.notify_journal is int)) &&
+             (!('favorite_jokes' in data) || (data.favorite_jokes is string && data.favorite_jokes.size() < 2000));
+    }
+
+    function isValidMessage(data) {
+      return hasRequiredFields(['role', 'content', 'id', 'timestamp']) &&
+             data.role in ['user', 'model'] &&
+             data.content is string && data.content.size() < 10000 &&
+             data.id is string &&
+             data.timestamp is int;
+    }
+
+    function isValidGoal(data) {
+      return hasRequiredFields(['id', 'title', 'status', 'created_at']) &&
+             data.title is string && data.title.size() < 200 &&
+             data.status is string &&
+             data.created_at is string;
+    }
+
+    function isValidJournalEntry(data) {
+      return hasRequiredFields(['id', 'title', 'content', 'date']) &&
+             data.title is string && data.title.size() < 200 &&
+             data.content is string && data.content.size() < 10000 &&
+             data.date is string;
+    }
+
+    function isValidSkill(data) {
+      return hasRequiredFields(['id', 'name', 'completed']) &&
+             data.name is string && data.name.size() < 200 &&
+             data.completed is int;
+    }
+
+    function isValidEmergencyContact(data) {
+      return hasRequiredFields(['id', 'name', 'phone']) &&
+             data.name is string && data.name.size() < 100 &&
+             data.phone is string && data.phone.size() < 20;
+    }
+
+    function isValidCalendarEvent(data) {
+      return hasRequiredFields(['id', 'title', 'date']) &&
+             data.title is string && data.title.size() < 200 &&
+             data.date is string;
+    }
+
+    function isValidMemory(data) {
+      return hasRequiredFields(['id', 'content', 'date']) &&
+             data.content is string && data.content.size() < 5000 &&
+             data.date is string;
+    }
+
+    function isValidCheckin(data) {
+      return hasRequiredFields(['id', 'date', 'feeling']) &&
+             data.feeling is string &&
+             data.date is string;
+    }
+
+    function isValidCommunityTip(data) {
+      return hasRequiredFields(['id', 'authorId', 'authorName', 'content', 'timestamp']) &&
+             data.id is string &&
+             data.authorId == request.auth.uid &&
+             data.authorName is string && data.authorName.size() < 100 &&
+             data.content is string && data.content.size() < 2000 &&
+             data.timestamp is int &&
+             (!('likes' in data) || data.likes is int) &&
+             (!('category' in data) || (data.category is string && data.category.size() < 50));
+    }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
+    match /communityTips/{tipId} {
+      allow read, list: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCommunityTip(request.resource.data);
+      allow update: if isAuthenticated() && (
+        // Only allow updating likes for anyone
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])) ||
+        // Only author can update content
+        (resource.data.authorId == request.auth.uid && isValidCommunityTip(request.resource.data))
+      );
+      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUserProfile(request.resource.data);
+      allow delete: if isAdmin();
+
+      match /chatHistory/{messageId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidMessage(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidMessage(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /skills/{skillId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidSkill(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidSkill(request.resource.data);
+        allow delete: if isAdmin();
+      }
+
+      match /journal/{entryId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidJournalEntry(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidJournalEntry(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /goals/{goalId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidGoal(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidGoal(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /emergencyContacts/{contactId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidEmergencyContact(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidEmergencyContact(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /calendarEvents/{eventId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidCalendarEvent(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidCalendarEvent(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /memories/{memoryId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidMemory(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidMemory(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /checkins/{checkinId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidCheckin(request.resource.data);
+        allow update: if (isOwner(userId) || isAdmin()) && isValidCheckin(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+  }
+}
