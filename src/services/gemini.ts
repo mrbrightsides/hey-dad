@@ -2,6 +2,14 @@ import { GoogleGenAI, GenerateContentResponse, Chat, Modality, ThinkingLevel } f
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
+// Model configuration
+const MODELS = {
+  REASONING: "gemini-3.1-pro-preview", // Best for complex advice and deep thinking
+  STABLE_FAST: "gemini-flash-latest",   // Best for speed and stability
+  TTS: "gemini-3.1-flash-tts-preview",  // Latest stable TTS
+  IMAGE: "gemini-3-flash-preview"       // Good for general vision tasks
+};
+
 export const DAD_SYSTEM_INSTRUCTION = `
 You are "Dad", a warm, patient, and encouraging father figure. 
 Your goal is to provide guidance, practical life skills, and emotional support to someone who might not have a father figure in their life.
@@ -105,7 +113,7 @@ async function handleGeminiCall<T>(call: () => Promise<T>): Promise<T> {
 export async function getDadResponseStream(message: string, history: any[] = [], language: 'en' | 'id' = 'en', profile?: UserProfile, onChunk?: (text: string) => void) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.REASONING; // Upgraded to Pro for better reasoning
     
     const now = new Date();
     const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
@@ -123,7 +131,7 @@ Use this information to provide timely greetings and advice.`;
       model,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + timeContext + emotionInstruction,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+        // Removed ThinkingLevel.LOW to allow model to use its full reasoning potential
       },
       history: history.map(msg => ({
         role: msg.role,
@@ -147,7 +155,7 @@ Use this information to provide timely greetings and advice.`;
 export async function getDadResponse(message: string, history: any[] = [], language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.REASONING;
     
     const now = new Date();
     const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
@@ -165,7 +173,7 @@ Use this information to provide timely greetings and advice.`;
       model,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + timeContext + emotionInstruction,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+        // Using default thinking (HIGH) for better reasoning
       },
       history: history.map(msg => ({
         role: msg.role,
@@ -181,14 +189,13 @@ Use this information to provide timely greetings and advice.`;
 export async function getAffirmation(language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.STABLE_FAST;
     
     const response = await genAI.models.generateContent({
       model,
       contents: language === 'id' ? "Ayah, aku sedang sedih. Bisa beri aku kata-kata penyemangat?" : "Dad, I'm feeling a bit down. Can you give me a quick affirmation?",
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nLike a quick pat on the back.",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -198,7 +205,7 @@ export async function getAffirmation(language: 'en' | 'id' = 'en', profile?: Use
 export async function breakdownGoal(goal: string, language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.REASONING;
     
     const prompt = language === 'id'
       ? `Ayah, aku punya target: "${goal}". Bisa bantu pecahkan jadi langkah-langkah kecil yang bisa dilakukan? Tolong berikan langkah-langkahnya dalam bentuk daftar sederhana.`
@@ -209,7 +216,6 @@ export async function breakdownGoal(goal: string, language: 'en' | 'id' = 'en', 
       contents: prompt,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nKeep the tone encouraging. Provide exactly 3-5 clear steps.",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -219,7 +225,7 @@ export async function breakdownGoal(goal: string, language: 'en' | 'id' = 'en', 
 export async function analyzeImageWithDad(imageBuffer: string, prompt: string, language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.IMAGE;
 
     const response = await genAI.models.generateContent({
       model,
@@ -236,7 +242,6 @@ export async function analyzeImageWithDad(imageBuffer: string, prompt: string, l
       },
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + (language === 'id' ? "\nExplain what you see like a dad helping his kid." : "\nExplain what you see like a dad helping his kid."),
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
     return response.text;
@@ -246,7 +251,7 @@ export async function analyzeImageWithDad(imageBuffer: string, prompt: string, l
 export async function getChatSummary(history: any[], language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.REASONING;
     
     const prompt = language === 'id'
       ? "Tolong berikan ringkasan singkat dari percakapan kita sejauh ini. Fokus pada topik utama, saran yang diberikan Ayah, dan kemajuan yang telah dibuat. Gunakan poin-poin."
@@ -262,7 +267,6 @@ export async function getChatSummary(history: any[], language: 'en' | 'id' = 'en
       },
       config: {
         systemInstruction: buildSystemInstruction(language, profile),
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -272,7 +276,7 @@ export async function getChatSummary(history: any[], language: 'en' | 'id' = 'en
 export async function getProactiveAdvice(timeOfDay: string, recentActivity: string, language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.STABLE_FAST;
     
     const now = new Date();
     const currentTimeStr = now.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' });
@@ -288,7 +292,6 @@ export async function getProactiveAdvice(timeOfDay: string, recentActivity: stri
       contents: prompt,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nYou are initiating a conversation.",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -298,14 +301,13 @@ export async function getProactiveAdvice(timeOfDay: string, recentActivity: stri
 export async function getDailyJoke(language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.STABLE_FAST;
     
     const response = await genAI.models.generateContent({
       model,
       contents: "Dad, tell me a joke for today!",
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nMake it light-hearted and funny. Tell a classic, clean 'Dad joke' or a short amusing anecdote.",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -315,7 +317,7 @@ export async function getDailyJoke(language: 'en' | 'id' = 'en', profile?: UserP
 export async function generateSpeech(text: string, language: 'en' | 'id' = 'en') {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-2.5-flash-preview-tts";
+    const model = MODELS.TTS;
     
     const response = await genAI.models.generateContent({
       model,
@@ -337,7 +339,7 @@ export async function generateSpeech(text: string, language: 'en' | 'id' = 'en')
 export async function getJournalPrompt(language: 'en' | 'id' = 'en', profile?: UserProfile) {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-3-flash-preview";
+    const model = MODELS.REASONING;
     
     const prompt = language === 'id'
       ? "Ayah, aku ingin menulis jurnal tapi bingung mau mulai dari mana. Bisa beri aku satu pertanyaan reflektif atau topik untuk membantuku mulai menulis?"
@@ -348,7 +350,6 @@ export async function getJournalPrompt(language: 'en' | 'id' = 'en', profile?: U
       contents: prompt,
       config: {
         systemInstruction: buildSystemInstruction(language, profile) + "\nProvide exactly one thoughtful, open-ended question or writing prompt. Keep it supportive and encouraging.",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
     return response.text;
@@ -358,7 +359,7 @@ export async function getJournalPrompt(language: 'en' | 'id' = 'en', profile?: U
 export async function speakResponse(text: string, language: 'en' | 'id' = 'en') {
   return handleGeminiCall(async () => {
     const genAI = getAI();
-    const model = "gemini-2.5-flash-preview-tts";
+    const model = MODELS.TTS;
     
     const voiceName = language === 'id' ? 'Kore' : 'Puck'; // Puck is a male voice
     
