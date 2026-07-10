@@ -91,8 +91,8 @@ import {
 } from './services/gemini';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { auth, googleProvider, isFirebaseConfigured } from './firebase';
-import { signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { auth, googleProvider, isFirebaseConfigured, login, loginAsGuest, isWebView, isMobile } from './firebase';
+import { signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser, getRedirectResult } from 'firebase/auth';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -762,11 +762,28 @@ export default function App() {
       setIsAuthReady(true);
       return;
     }
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setIsAuthReady(true);
-    });
-    return () => unsubscribe();
+
+    const initAuth = async () => {
+      try {
+        // Check for redirect result first
+        await getRedirectResult(auth);
+      } catch (error: any) {
+        console.error("Redirect result error:", error);
+      }
+
+      // Then set up the listener
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        setUser(user);
+        setIsAuthReady(true);
+      });
+
+      return unsubscribe;
+    };
+
+    const unsubPromise = initAuth();
+    return () => {
+      unsubPromise.then(unsub => unsub?.());
+    };
   }, []);
 
   if (!isFirebaseConfigured) {
@@ -804,9 +821,26 @@ export default function App() {
 
   const handleLogin = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      await login();
     } catch (error) {
       console.error("Login failed", error);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    try {
+      await loginAsGuest();
+    } catch (error: any) {
+      console.error("Guest login failed", error);
+      if (error.code === 'auth/admin-restricted-operation') {
+        alert(language === 'en' 
+          ? "Guest login is disabled. Please enable 'Anonymous' provider in your Firebase Console (Authentication > Sign-in method)." 
+          : "Login tamu dinonaktifkan. Harap aktifkan provider 'Anonymous' di Firebase Console Anda (Authentication > Sign-in method).");
+      } else {
+        alert(language === 'en' 
+          ? `Guest login failed: ${error.message}` 
+          : `Login tamu gagal: ${error.message}`);
+      }
     }
   };
 
@@ -1801,18 +1835,97 @@ Sent from Dad App`;
             <h1 className="text-3xl font-bold text-[#5A5A40] dark:text-emerald-400 mb-4 font-serif">
               {t.appName}
             </h1>
-            <p className="text-[#8a8a7a] dark:text-zinc-400 mb-8 font-sans leading-relaxed">
+            <p className="text-[#8a8a7a] dark:text-zinc-400 mb-6 font-sans leading-relaxed">
               {language === 'en' 
                 ? "Welcome back, kid. Dad's been waiting for you. Sign in to continue our journey together."
                 : "Selamat datang kembali, nak. Ayah sudah menunggumu. Masuk untuk melanjutkan perjalanan kita bersama."}
             </p>
-            <button 
-              onClick={handleLogin}
-              className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold font-sans flex items-center justify-center gap-3 hover:bg-[#4a4a30] dark:hover:bg-emerald-500 transition-all shadow-lg hover:shadow-emerald-500/20"
-            >
-              <LogIn size={20} />
-              {language === 'en' ? "Sign in with Google" : "Masuk dengan Google"}
-            </button>
+
+            {isWebView() ? (
+              <div className="space-y-4">
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-2xl p-4 text-left text-sm text-amber-800 dark:text-amber-300 mb-6">
+                  <p className="font-semibold flex items-center gap-2 mb-1 text-amber-900 dark:text-amber-200">
+                    <span>📱</span> {language === 'en' ? "Android App Detected" : "Aplikasi Android Terdeteksi"}
+                  </p>
+                  <p className="leading-relaxed">
+                    {language === 'en'
+                      ? "To avoid Google Sign-In issues inside WebViews, we highly recommend using the **Guest Login** below."
+                      : "Untuk menghindari kendala login Google di dalam aplikasi (WebView), kami sangat menyarankan masuk sebagai **Tamu (Guest)**."}
+                  </p>
+                </div>
+
+                <button 
+                  onClick={handleGuestLogin}
+                  className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold font-sans flex items-center justify-center gap-3 hover:bg-[#4a4a30] dark:hover:bg-emerald-500 transition-all shadow-lg hover:shadow-emerald-500/20"
+                >
+                  <User size={20} />
+                  {language === 'en' ? "Continue as Guest (Recommended)" : "Lanjutkan sebagai Tamu (Disarankan)"}
+                </button>
+
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-stone-200 dark:border-stone-800"></div>
+                  <span className="flex-shrink mx-4 text-stone-400 dark:text-stone-600 text-xs font-sans font-semibold">
+                    {language === 'en' ? "OR GOOGLE SIGN IN" : "ATAU LOGIN GOOGLE"}
+                  </span>
+                  <div className="flex-grow border-t border-stone-200 dark:border-stone-800"></div>
+                </div>
+
+                <button 
+                  onClick={handleLogin}
+                  className="w-full bg-white dark:bg-zinc-800 text-[#5A5A40] dark:text-emerald-400 py-4 rounded-2xl font-bold font-sans flex items-center justify-center gap-3 border-2 border-[#5A5A40] dark:border-emerald-600 hover:bg-[#f5f5f0] dark:hover:bg-zinc-700 transition-all"
+                >
+                  <LogIn size={20} />
+                  {language === 'en' ? "Sign in with Google" : "Masuk dengan Google"}
+                </button>
+                <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-2 leading-relaxed">
+                  {language === 'en' 
+                    ? "If you want Google sync, open this app in your mobile browser (Chrome/Safari) to sign in."
+                    : "Jika ingin sinkronisasi Google, buka web ini di browser Hp Anda (Chrome/Safari) untuk login."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl p-4 text-left text-sm text-emerald-800 dark:text-emerald-300 mb-6">
+                  <p className="font-semibold flex items-center gap-2 mb-1 text-emerald-900 dark:text-emerald-200">
+                    <span>💡</span> {language === 'en' ? "Recommended Option" : "Opsi Disarankan"}
+                  </p>
+                  <p className="leading-relaxed">
+                    {language === 'en'
+                      ? "Sign in with Google to securely back up your journals, goals, and chat history in the cloud."
+                      : "Masuk dengan Google agar seluruh data chat, jurnal, target, dan progres Anda tersimpan aman di awan."}
+                  </p>
+                </div>
+
+                <button 
+                  onClick={handleLogin}
+                  className="w-full bg-[#5A5A40] dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold font-sans flex items-center justify-center gap-3 hover:bg-[#4a4a30] dark:hover:bg-emerald-500 transition-all shadow-lg hover:shadow-emerald-500/20"
+                >
+                  <LogIn size={20} />
+                  {language === 'en' ? "Sign in with Google" : "Masuk dengan Google"}
+                </button>
+
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-stone-200 dark:border-stone-800"></div>
+                  <span className="flex-shrink mx-4 text-stone-400 dark:text-stone-600 text-xs font-sans font-semibold">
+                    {language === 'en' ? "OR CONTINUE OFF-GRID" : "ATAU MASUK TANPA AKUN"}
+                  </span>
+                  <div className="flex-grow border-t border-stone-200 dark:border-stone-800"></div>
+                </div>
+
+                <button 
+                  onClick={handleGuestLogin}
+                  className="w-full bg-white dark:bg-zinc-800 text-[#5A5A40] dark:text-emerald-400 py-4 rounded-2xl font-bold font-sans flex items-center justify-center gap-3 border-2 border-[#5A5A40] dark:border-emerald-600 hover:bg-[#f5f5f0] dark:hover:bg-zinc-700 transition-all"
+                >
+                  <User size={20} />
+                  {language === 'en' ? "Continue as Guest" : "Lanjutkan sebagai Tamu"}
+                </button>
+                <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-2 leading-relaxed">
+                  {language === 'en'
+                    ? "Guest data is saved locally on this browser and may be lost if browser cache is cleared."
+                    : "Data Tamu disimpan secara lokal di browser ini dan bisa hilang jika cache dibersihkan."}
+                </p>
+              </div>
+            )}
           </motion.div>
         </div>
       ) : (
