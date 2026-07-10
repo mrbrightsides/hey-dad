@@ -91,8 +91,9 @@ import {
 } from './services/gemini';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { auth, googleProvider, isFirebaseConfigured, login } from './firebase';
-import { signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser, getRedirectResult, signInAnonymously } from 'firebase/auth';
+import { auth, googleProvider, isFirebaseConfigured } from './firebase';
+import { signInWithPopup, onAuthStateChanged, signOut, getRedirectResult, signInAnonymously, signInWithRedirect } from 'firebase/auth';
+import type { User as FirebaseUser } from 'firebase/auth';
 
 const isMobile = () => {
   if (typeof window === 'undefined') return false;
@@ -103,6 +104,14 @@ const isWebView = () => {
   if (typeof window === 'undefined') return false;
   const ua = window.navigator.userAgent;
   return /Android/i.test(ua) && /wv|WebView|Version\//i.test(ua);
+};
+
+const login = async () => {
+  if (isMobile()) {
+    return await signInWithRedirect(auth, googleProvider);
+  } else {
+    return await signInWithPopup(auth, googleProvider);
+  }
 };
 
 function cn(...inputs: ClassValue[]) {
