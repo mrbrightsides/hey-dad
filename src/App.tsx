@@ -91,8 +91,19 @@ import {
 } from './services/gemini';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { auth, googleProvider, isFirebaseConfigured, login, loginAsGuest, isWebView, isMobile } from './firebase';
-import { signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser, getRedirectResult } from 'firebase/auth';
+import { auth, googleProvider, isFirebaseConfigured, login } from './firebase';
+import { signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser, getRedirectResult, signInAnonymously } from 'firebase/auth';
+
+const isMobile = () => {
+  if (typeof window === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+const isWebView = () => {
+  if (typeof window === 'undefined') return false;
+  const ua = window.navigator.userAgent;
+  return /Android/i.test(ua) && /wv|WebView|Version\//i.test(ua);
+};
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -829,7 +840,7 @@ export default function App() {
 
   const handleGuestLogin = async () => {
     try {
-      await loginAsGuest();
+      await signInAnonymously(auth);
     } catch (error: any) {
       console.error("Guest login failed", error);
       if (error.code === 'auth/admin-restricted-operation') {
